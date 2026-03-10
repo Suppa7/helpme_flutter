@@ -2,13 +2,20 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:test/models/medication.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
 import 'services/notification_service.dart';
 import 'screens/home_screen.dart';
-import '../services/database_helper.dart';
+import 'services/database_helper.dart';
 
 void main() async {
   // ต้องมีคำสั่งนี้เพื่อให้ Flutter ผูกกับ Native code ก่อนเรียกใช้ SharedPreferences
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Firebase
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
 
   await NotificationService().init();
 

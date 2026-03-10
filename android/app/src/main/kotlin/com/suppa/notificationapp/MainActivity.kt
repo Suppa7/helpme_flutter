@@ -1,4 +1,4 @@
-package com.example.test
+package com.suppa.notificationapp
 
 import io.flutter.embedding.android.FlutterActivity
 

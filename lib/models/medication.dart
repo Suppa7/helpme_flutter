@@ -17,9 +17,9 @@ class Medication {
     this.isTaken = 0,
   });
 
+  // toMap ไม่รวม 'id' เพราะใช้ Firestore Document ID แทน
   Map<String, dynamic> toMap() {
     return {
-      'id': id,
       'name': name,
       'time': time,
       'imagePath': imagePath,
@@ -31,13 +31,13 @@ class Medication {
 
   factory Medication.fromMap(Map<String, dynamic> map) {
     return Medication(
-      id: map['id'],
-      name: map['name'],
-      time: map['time'],
-      imagePath: map['imagePath'],
-      description: map['description'],
-      remainingPills: map['remainingPills'],
-      isTaken: map['isTaken'],
+      id: map['id'] as int?,
+      name: map['name'] as String? ?? '',
+      time: map['time'] as String? ?? '',
+      imagePath: map['imagePath'] as String?,
+      description: map['description'] as String?,
+      remainingPills: (map['remainingPills'] as num?)?.toInt() ?? 0,
+      isTaken: (map['isTaken'] as num?)?.toInt() ?? 0,
     );
   }
 }
