@@ -1,16 +1,15 @@
-import 'dart:io';
-import 'dart:math';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../models/medication.dart';
+import '../models/schedule.dart';
 import '../services/database_helper.dart';
 import '../services/notification_service.dart';
+import '../models/medication_log.dart';
+import 'schedule_medications_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({Key? key}) : super(key: key);
+  const HomeScreen({super.key});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -20,33 +19,25 @@ class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
   String _userName = '';
   String _relativeCode = '';
-  List<Medication> _medications =
-      []; // ให้แน่ใจว่า import Medication model แล้ว
+  List<ScheduleModel> _schedules = [];
   bool _isLoading = true;
+  final Map<String, bool> _hasEmptyStock = {}; // เก็บสถานะว่าตารางนี้มียาหมดหรือไม่
 
   @override
   void initState() {
     super.initState();
     _checkDailyReset();
     _loadUserData();
-    _refreshMedications();
+    _refreshSchedules();
+    // 🌟 ตรวจสอบและบันทึก 'missed' สำหรับยาที่ผ่านเวลาไปแล้วแต่ยังไม่ได้ทาน
+    DatabaseHelper.instance.checkAndMarkMissedLogs();
   }
 
   // ==========================================
-  // ลอจิกรีเซ็ตสถานะยาเมื่อขึ้นวันใหม่
+  // ลอจิกรีเซ็ตสถานะยาเมื่อขึ้นวันใหม่ (ปิดการลอจิกเก่าไปก่อนเพราะใช้ MedicationLogs ทีหลัง)
   // ==========================================
   Future<void> _checkDailyReset() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    // ดึงวันที่ปัจจุบัน (เช่น 2026-02-17)
-    String today = DateTime.now().toIso8601String().split('T')[0];
-    String? lastOpenDate = prefs.getString('lastOpenDate');
-
-    // ถ้าวันที่เปิดแอป ไม่ตรงกับวันที่บันทึกไว้ล่าสุด (แปลว่าขึ้นวันใหม่)
-    if (lastOpenDate != today) {
-      await DatabaseHelper.instance
-          .resetAllPillsStatus(); // สั่งรีเซ็ตสถานะยาทุกตัวเป็น 0
-      await prefs.setString('lastOpenDate', today); // อัปเดตวันที่ล่าสุด
-    }
+    // ไม่มี _checkDailyReset แล้ว
   }
 
   // ==========================================
@@ -54,43 +45,57 @@ class _HomeScreenState extends State<HomeScreen> {
   // ==========================================
   Future<void> _loadUserData() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? savedCode = prefs.getString('relativeCode');
+    String? uid = prefs.getString('uid');
+    
+    String savedCode = '';
+    String userName = prefs.getString('userName') ?? 'ผู้ใช้งาน';
 
-    // ถ้าย้งไม่มีรหัสญาติ ให้สุ่มรหัส 10 หลัก
-    if (savedCode == null) {
-      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-      Random rnd = Random();
-      savedCode = String.fromCharCodes(
-        Iterable.generate(
-          10,
-          (_) => chars.codeUnitAt(rnd.nextInt(chars.length)),
-        ),
-      );
-      await prefs.setString('relativeCode', savedCode);
+    if (uid != null && uid.isNotEmpty) {
+      try {
+        final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+        if (doc.exists) {
+          savedCode = doc.data()?['userCode'] ?? '';
+          userName = doc.data()?['username'] ?? userName;
+          await prefs.setString('userName', userName);
+        }
+      } catch (e) {
+        print('Error loading user code: $e');
+      }
     }
+
     setState(() {
-      _userName = prefs.getString('userName') ?? 'ผู้ใช้งาน';
-      _relativeCode = savedCode!;
+      _userName = userName;
+      _relativeCode = savedCode;
     });
   }
 
-  Future<void> _refreshMedications() async {
+  Future<void> _refreshSchedules() async {
     setState(() => _isLoading = true);
-    // ให้แน่ใจว่า import DatabaseHelper แล้ว
-    final data = await DatabaseHelper.instance.getPills();
+    final data = await DatabaseHelper.instance.getUserSchedules();
+    
+    final Map<String, bool> emptyStockMap = {};
+    for (var sched in data) {
+      final meds = await DatabaseHelper.instance.getMedicationsBySchedule(sched.scheduleId!);
+      // เช็คว่าในตารางเวลานี้ มียาตัวไหนที่ amount <= 0 หรือไม่
+      bool hasEmpty = meds.any((m) => m.amount <= 0);
+      emptyStockMap[sched.scheduleId!] = hasEmpty;
+    }
+
     setState(() {
-      _medications = data;
+      _schedules = data;
+      _hasEmptyStock.clear();
+      _hasEmptyStock.addAll(emptyStockMap);
       _isLoading = false;
     });
   }
 
-  Future<void> _deleteMedication(int id) async {
+  Future<void> _deleteSchedule(ScheduleModel sched) async {
     bool confirm =
         await showDialog(
           context: context,
           builder: (ctx) => AlertDialog(
             title: const Text('ยืนยันการลบ'),
-            content: const Text('คุณต้องการลบรายการยานี้ออกจากระบบใช่หรือไม่?'),
+            content: const Text('คุณต้องการลบเวลาแจ้งเตือนนี้ รวมถึงรายการยาทั้งหมดที่อยู่ในเวลานี้ใช่หรือไม่?'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
@@ -106,20 +111,21 @@ class _HomeScreenState extends State<HomeScreen> {
         false;
 
     if (confirm) {
-      await DatabaseHelper.instance.deletePill(id);
-      _refreshMedications();
+      await NotificationService().cancelAllAlertsForSchedule(sched.scheduleId!);
+      await DatabaseHelper.instance.deleteSchedule(sched.scheduleId!);
+      _refreshSchedules();
     }
   }
 
   // ==========================================
-  // Dialog เพิ่มยา
+  // Dialog เพิ่มตารางเวลา
   // ==========================================
-  Future<void> _showAddMedicationDialog() async {
-    final TextEditingController nameController = TextEditingController();
-    final TextEditingController descController = TextEditingController();
-    final TextEditingController amountController = TextEditingController();
+  Future<void> _showAddScheduleDialog() async {
     TimeOfDay selectedTime = TimeOfDay.now();
-    String? selectedImagePath;
+    
+    // ตั้งค่า default
+    String _selectedMeal = 'morning';
+    String _selectedInstruction = 'after_meal';
 
     await showDialog(
       context: context,
@@ -132,10 +138,10 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               title: const Row(
                 children: [
-                  Icon(Icons.medical_information, color: Colors.blue, size: 30),
+                  Icon(Icons.access_time, color: Colors.blue, size: 30),
                   SizedBox(width: 10),
                   Text(
-                    'เพิ่มรายการยา',
+                    'เพิ่มเวลาแจ้งเตือน',
                     style: TextStyle(
                       color: Colors.blue,
                       fontWeight: FontWeight.bold,
@@ -147,73 +153,26 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // ส่วนเลือกรูปภาพ
-                    GestureDetector(
-                      onTap: () async {
-                        final picker = ImagePicker();
-                        final XFile? image = await picker.pickImage(
-                          source: ImageSource.camera,
-                        );
-                        if (image != null) {
-                          setDialogState(() => selectedImagePath = image.path);
-                        }
-                      },
-                      child: Container(
-                        height: 120,
-                        width: double.infinity,
-                        decoration: BoxDecoration(
-                          color: Colors.blue.shade50,
-                          borderRadius: BorderRadius.circular(15),
-                          border: Border.all(color: Colors.blue.shade200),
-                        ),
-                        child: selectedImagePath == null
-                            ? const Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.camera_alt,
-                                    size: 40,
-                                    color: Colors.blue,
-                                  ),
-                                  Text(
-                                    'ถ่ายรูปยา',
-                                    style: TextStyle(color: Colors.blue),
-                                  ),
-                                ],
-                              )
-                            : ClipRRect(
-                                borderRadius: BorderRadius.circular(15),
-                                child: Image.file(
-                                  File(selectedImagePath!),
-                                  fit: BoxFit.cover,
-                                ),
-                              ),
-                      ),
+                    DropdownButtonFormField<String>(
+                      value: _selectedMeal,
+                      decoration: const InputDecoration(labelText: 'มื้ออาหาร', border: OutlineInputBorder()),
+                      items: const [
+                        DropdownMenuItem(value: 'morning', child: Text('เช้า')),
+                        DropdownMenuItem(value: 'lunch', child: Text('กลางวัน')),
+                        DropdownMenuItem(value: 'dinner', child: Text('เย็น')),
+                        DropdownMenuItem(value: 'before_bed', child: Text('ก่อนนอน')),
+                      ],
+                      onChanged: (val) => setDialogState(() => _selectedMeal = val!),
                     ),
                     const SizedBox(height: 15),
-                    TextField(
-                      controller: nameController,
-                      decoration: const InputDecoration(
-                        labelText: 'ชื่อยา',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 15),
-                    TextField(
-                      controller: descController,
-                      decoration: const InputDecoration(
-                        labelText: 'คำอธิบาย (เช่น ทานหลังอาหาร)',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 15),
-                    TextField(
-                      controller: amountController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'จำนวนเม็ดที่มี',
-                        border: OutlineInputBorder(),
-                      ),
+                    DropdownButtonFormField<String>(
+                      value: _selectedInstruction,
+                      decoration: const InputDecoration(labelText: 'เงื่อนไข', border: OutlineInputBorder()),
+                      items: const [
+                        DropdownMenuItem(value: 'before_meal', child: Text('ก่อนอาหาร')),
+                        DropdownMenuItem(value: 'after_meal', child: Text('หลังอาหาร')),
+                      ],
+                      onChanged: (val) => setDialogState(() => _selectedInstruction = val!),
                     ),
                     const SizedBox(height: 15),
                     Row(
@@ -232,8 +191,9 @@ class _HomeScreenState extends State<HomeScreen> {
                               context: context,
                               initialTime: selectedTime,
                             );
-                            if (picked != null)
+                            if (picked != null) {
                               setDialogState(() => selectedTime = picked);
+                            }
                           },
                           icon: const Icon(Icons.access_time),
                           label: const Text('ตั้งเวลา'),
@@ -261,34 +221,22 @@ class _HomeScreenState extends State<HomeScreen> {
                     foregroundColor: Colors.white,
                   ),
                   onPressed: () async {
-                    if (nameController.text.isNotEmpty &&
-                        amountController.text.isNotEmpty) {
-                      String formattedTime =
-                          '${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')}';
+                    String formattedTime =
+                        '${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')}';
 
-                      final newMed = Medication(
-                        name: nameController.text,
-                        time: formattedTime,
-                        imagePath: selectedImagePath,
-                        description: descController.text,
-                        remainingPills: int.parse(amountController.text),
-                        isTaken: 0,
-                      );
-                      final savedMed = await DatabaseHelper.instance.insertPill(
-                        newMed,
-                      );
+                    final newSchedule = ScheduleModel(
+                      userId: '', // เดี๋ยว DatabaseHelper เติมให้
+                      meal: _selectedMeal,
+                      time: formattedTime,
+                      instruction: _selectedInstruction,
+                      days: ['Everyday'], 
+                      isActive: true
+                    );
+                    
+                    await DatabaseHelper.instance.insertSchedule(newSchedule);
 
-                      // 🌟 ตั้งการแจ้งเตือนหลังบันทึกยา (นี่คือสาเหตุที่ print ไม่ทำงาน — ต้องเรียก method นี้ด้วย)
-                      await NotificationService().scheduleMedicationAlerts(
-                        medId: savedMed,
-                        medName: nameController.text,
-                        timeString: formattedTime,
-                        userName: _userName,
-                      );
-
-                      if (mounted) Navigator.pop(context);
-                      _refreshMedications();
-                    }
+                    if (mounted) Navigator.pop(context);
+                    _refreshSchedules();
                   },
                   child: const Text('บันทึก', style: TextStyle(fontSize: 18)),
                 ),
@@ -301,7 +249,143 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // ==========================================
-  // 1. หน้าตารางยา (เพิ่มลอจิกตัดสต็อก)
+  // Dialog แก้ไขตารางเวลา
+  // ==========================================
+  Future<void> _showEditScheduleDialog(ScheduleModel sched) async {
+    final timeParts = sched.time.split(':');
+    TimeOfDay selectedTime = TimeOfDay(
+      hour: int.tryParse(timeParts[0]) ?? 8, 
+      minute: int.tryParse(timeParts[1]) ?? 0
+    );
+    
+    // ตั้งค่าเริ่มต้นจากของเดิม
+    String _selectedMeal = sched.meal;
+    String _selectedInstruction = sched.instruction;
+
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              title: const Row(
+                children: [
+                  Icon(Icons.edit_calendar, color: Colors.blue, size: 30),
+                  SizedBox(width: 10),
+                  Text(
+                    'แก้ไขเวลาแจ้งเตือน',
+                    style: TextStyle(
+                      color: Colors.blue,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    DropdownButtonFormField<String>(
+                      value: _selectedMeal,
+                      decoration: const InputDecoration(labelText: 'มื้ออาหาร', border: OutlineInputBorder()),
+                      items: const [
+                        DropdownMenuItem(value: 'morning', child: Text('เช้า')),
+                        DropdownMenuItem(value: 'lunch', child: Text('กลางวัน')),
+                        DropdownMenuItem(value: 'dinner', child: Text('เย็น')),
+                        DropdownMenuItem(value: 'before_bed', child: Text('ก่อนนอน')),
+                      ],
+                      onChanged: (val) => setDialogState(() => _selectedMeal = val!),
+                    ),
+                    const SizedBox(height: 15),
+                    DropdownButtonFormField<String>(
+                      value: _selectedInstruction,
+                      decoration: const InputDecoration(labelText: 'เงื่อนไข', border: OutlineInputBorder()),
+                      items: const [
+                        DropdownMenuItem(value: 'before_meal', child: Text('ก่อนอาหาร')),
+                        DropdownMenuItem(value: 'after_meal', child: Text('หลังอาหาร')),
+                      ],
+                      onChanged: (val) => setDialogState(() => _selectedInstruction = val!),
+                    ),
+                    const SizedBox(height: 15),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'เวลา: ${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')} น.',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: () async {
+                            final TimeOfDay? picked = await showTimePicker(
+                              context: context,
+                              initialTime: selectedTime,
+                            );
+                            if (picked != null) {
+                              setDialogState(() => selectedTime = picked);
+                            }
+                          },
+                          icon: const Icon(Icons.access_time),
+                          label: const Text('ตั้งเวลา'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue.shade100,
+                            foregroundColor: Colors.blue.shade900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text(
+                    'ยกเลิก',
+                    style: TextStyle(color: Colors.red, fontSize: 18),
+                  ),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () async {
+                    String formattedTime =
+                        '${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')}';
+
+                    final updatedSchedule = ScheduleModel(
+                      scheduleId: sched.scheduleId,
+                      userId: sched.userId,
+                      meal: _selectedMeal,
+                      time: formattedTime,
+                      instruction: _selectedInstruction,
+                      days: sched.days, 
+                      isActive: sched.isActive
+                    );
+                    
+                    await DatabaseHelper.instance.updateSchedule(updatedSchedule);
+
+                    if (mounted) Navigator.pop(context);
+                    _refreshSchedules();
+                  },
+                  child: const Text('บันทึก', style: TextStyle(fontSize: 18)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ==========================================
+  // 1. หน้าตารางเวลา
   // ==========================================
   Widget _buildScheduleView() {
     return Column(
@@ -309,10 +393,10 @@ class _HomeScreenState extends State<HomeScreen> {
         Padding(
           padding: const EdgeInsets.all(16.0),
           child: ElevatedButton.icon(
-            onPressed: _showAddMedicationDialog,
-            icon: const Icon(Icons.add_alert, size: 32),
+            onPressed: _showAddScheduleDialog,
+            icon: const Icon(Icons.add_alarm, size: 32),
             label: const Text(
-              'เพิ่มรายการยาใหม่',
+              'เพิ่มเวลาแจ้งเตือน',
               style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
             ),
             style: ElevatedButton.styleFrom(
@@ -327,56 +411,22 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
 
-        // 🔔 ปุ่มทดสอบแจ้งเตือนทันที (สำหรับ Debug)
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-          child: ElevatedButton.icon(
-            onPressed: () async {
-              const androidDetails = AndroidNotificationDetails(
-                'test_channel',
-                'Test',
-                importance: Importance.max,
-                priority: Priority.high,
-              );
-              await NotificationService().flutterLocalNotificationsPlugin.show(
-                999,
-                '🔔 เทสต์ระบบแจ้งเตือน',
-                'ถ้านี่เด้ง แปลว่าสิทธิ์แจ้งเตือนผ่านแล้ว ปัญหาอยู่ที่การตั้งเวลา!',
-                const NotificationDetails(android: androidDetails),
-              );
-            },
-            icon: const Icon(Icons.notifications_active, size: 24),
-            label: const Text(
-              'ทดสอบแจ้งเตือนทันที',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red.shade600,
-              foregroundColor: Colors.white,
-              minimumSize: const Size(double.infinity, 50),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          ),
-        ),
-
         Expanded(
           child: _isLoading
               ? const Center(child: CircularProgressIndicator())
-              : _medications.isEmpty
+              : _schedules.isEmpty
               ? Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(
-                        Icons.medication_liquid,
+                        Icons.more_time,
                         size: 80,
                         color: Colors.blue.shade200,
                       ),
                       const SizedBox(height: 10),
                       const Text(
-                        'ยังไม่มีรายการยาในวันนี้',
+                        'ยังไม่มีเวลาแจ้งเตือน',
                         style: TextStyle(fontSize: 20, color: Colors.grey),
                       ),
                     ],
@@ -384,159 +434,131 @@ class _HomeScreenState extends State<HomeScreen> {
                 )
               : ListView.builder(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: _medications.length,
+                  itemCount: _schedules.length,
                   itemBuilder: (context, index) {
-                    final med = _medications[index];
-                    final isTaken = med.isTaken == 1;
+                    final sched = _schedules[index];
+                    
+                    String mealText = sched.meal == 'morning' ? 'เช้า' :
+                                      sched.meal == 'lunch' ? 'กลางวัน' :
+                                      sched.meal == 'dinner' ? 'เย็น' : 'ก่อนนอน';
+                                      
+                    String instructionText = sched.instruction == 'before_meal' ? 'ก่อนอาหาร' :
+                                             sched.instruction == 'after_meal' ? 'หลังอาหาร' : 'ไม่ระบุ';
+
+                    IconData mealIcon;
+                    switch (sched.meal) {
+                      case 'morning':
+                        mealIcon = Icons.wb_sunny;
+                        break;
+                      case 'lunch':
+                        mealIcon = Icons.wb_cloudy; // หรือจะใช้ Icons.restaurant
+                        break;
+                      case 'dinner':
+                        mealIcon = Icons.nights_stay;
+                        break;
+                      case 'before_bed':
+                        mealIcon = Icons.bedtime;
+                        break;
+                      default:
+                        mealIcon = Icons.access_time_filled;
+                    }
 
                     return Card(
                       elevation: 3,
                       margin: const EdgeInsets.only(bottom: 12),
                       shape: RoundedRectangleBorder(
                         side: BorderSide(
-                          color: isTaken
-                              ? Colors.grey.shade300
-                              : Colors.blue.shade200,
+                          color: Colors.blue.shade200,
                           width: 2,
                         ),
                         borderRadius: BorderRadius.circular(15),
                       ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12.0),
-                        child: Row(
-                          children: [
-                            if (med.imagePath != null)
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(10),
-                                child: Image.file(
-                                  File(med.imagePath!),
-                                  width: 60,
-                                  height: 60,
-                                  fit: BoxFit.cover,
-                                ),
-                              )
-                            else
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(15),
+                        onTap: () {
+                          // ไปหน้ายาในตารางเวลานี้
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => ScheduleMedicationsScreen(schedule: sched),
+                            ),
+                          ).then((_) => _refreshSchedules()); // refresh in case deleted/updated
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Row(
+                            children: [
                               Container(
                                 width: 60,
                                 height: 60,
                                 decoration: BoxDecoration(
                                   color: Colors.blue.shade50,
-                                  borderRadius: BorderRadius.circular(10),
+                                  borderRadius: BorderRadius.circular(15),
                                 ),
-                                child: const Icon(
-                                  Icons.medication,
+                                child: Icon(
+                                  mealIcon,
                                   color: Colors.blue,
                                   size: 35,
                                 ),
                               ),
-                            const SizedBox(width: 15),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    med.time,
-                                    style: TextStyle(
-                                      fontSize: 24,
-                                      fontWeight: FontWeight.bold,
-                                      color: isTaken
-                                          ? Colors.grey
-                                          : Colors.blue.shade900,
+                              const SizedBox(width: 15),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Text(
+                                          sched.time,
+                                          style: TextStyle(
+                                            fontSize: 28,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.blue.shade900,
+                                          ),
+                                        ),
+                                        if (_hasEmptyStock[sched.scheduleId] == true) ...[
+                                          const SizedBox(width: 8),
+                                          const Tooltip(
+                                            message: 'มียาที่หมดแล้ว',
+                                            child: Icon(Icons.warning, color: Colors.red),
+                                          ),
+                                        ],
+                                      ],
                                     ),
-                                  ),
-                                  Text(
-                                    med.name,
-                                    style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  if (med.description != null &&
-                                      med.description!.isNotEmpty)
+                                    const SizedBox(height: 4),
                                     Text(
-                                      med.description!,
-                                      style: const TextStyle(
-                                        color: Colors.grey,
+                                      'มื้อ: $mealText ($instructionText)',
+                                      style: TextStyle(
+                                        color: Colors.grey.shade700,
+                                        fontSize: 16,
                                       ),
                                     ),
-                                  Text(
-                                    'เหลือ: ${med.remainingPills} เม็ด',
-                                    style: TextStyle(
-                                      color: Colors.orange.shade700,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
-                            ),
-
-                            // 🌟 ส่วนของปุ่มกดที่เพิ่มลอจิกตัดสต็อกยา 🌟
-
-                            // 🌟 ส่วนของปุ่มต่างๆ (ลบ และ เช็กสถานะ) 🌟
-                            Column(
-                              children: [
-                                IconButton(
-                                  icon: const Icon(
-                                    Icons.delete,
-                                    color: Colors.red,
-                                    size: 28,
-                                  ),
-                                  onPressed: () => _deleteMedication(med.id!),
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.edit_outlined,
+                                  color: Colors.orange,
+                                  size: 30,
                                 ),
-                                IconButton(
-                                  icon: Icon(
-                                    isTaken
-                                        ? Icons.check_circle
-                                        : Icons.radio_button_unchecked,
-                                    color: isTaken ? Colors.green : Colors.grey,
-                                    size: 45,
-                                  ),
-                                  onPressed: () async {
-                                    int newRemaining = med.remainingPills;
-
-                                    // กรณียังไม่ได้กิน แล้วจะกดยืนยันว่า "กินแล้ว"
-                                    if (!isTaken) {
-                                      if (newRemaining > 0) {
-                                        newRemaining -= 1; // หักยา 1 เม็ด
-                                      } else {
-                                        // ถ้ายาหมด แจ้งเตือนและไม่อนุญาตให้กด
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                              'ยารายการนี้หมดแล้ว กรุณาเติมยาครับ!',
-                                            ),
-                                            backgroundColor: Colors.red,
-                                          ),
-                                        );
-                                        return;
-                                      }
-                                    }
-                                    // กรณีกินไปแล้ว แต่อยากกดยกเลิก (เผื่อผู้สูงอายุกดผิด)
-                                    else {
-                                      newRemaining += 1; // คืนยา 1 เม็ด
-                                    }
-
-                                    // อัปเดตข้อมูลลง Model
-                                    med.isTaken = isTaken ? 0 : 1;
-                                    med.remainingPills = newRemaining;
-
-                                    // บันทึกลง Database
-                                    await DatabaseHelper.instance
-                                        .updateMedication(med);
-
-                                    // (ออปชันเสริม) ถ้ายืนยันว่ากินแล้ว ให้ยกเลิกการแจ้งเตือนของญาติ
-                                    if (med.isTaken == 1)
-                                      await NotificationService()
-                                          .cancelRelativeAlert(med.id!);
-
-                                    _refreshMedications(); // รีเฟรชหน้าจอ
-                                  },
+                                onPressed: () => _showEditScheduleDialog(sched),
+                              ),
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.delete_outline,
+                                  color: Colors.red,
+                                  size: 30,
                                 ),
-                              ],
-                            ),
-                          ],
+                                onPressed: () => _deleteSchedule(sched),
+                              ),
+                              const Icon(
+                                Icons.chevron_right,
+                                color: Colors.grey,
+                                size: 30,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     );
@@ -551,9 +573,6 @@ class _HomeScreenState extends State<HomeScreen> {
   // 2. หน้าประวัติการทานยา (แสดงเฉพาะยาที่กินแล้ว)
   // ==========================================
   Widget _buildHistoryView() {
-    // กรองเอาเฉพาะยาที่ isTaken == 1 (กินแล้ว)
-    final historyList = _medications.where((med) => med.isTaken == 1).toList();
-
     return Column(
       children: [
         Container(
@@ -571,8 +590,19 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         Expanded(
-          child: historyList.isEmpty
-              ? Center(
+          child: FutureBuilder<List<MedicationLog>>(
+            future: DatabaseHelper.instance.getTodayMedicationLogs(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (snapshot.hasError) {
+                return Center(child: Text('เกิดข้อผิดพลาด: ${snapshot.error}'));
+              }
+              final historyList = snapshot.data ?? [];
+              
+              if (historyList.isEmpty) {
+                return Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -583,54 +613,141 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(height: 10),
                       const Text(
-                        'ยังไม่มีประวัติการทานยา',
-                        style: TextStyle(fontSize: 20, color: Colors.grey),
+                        'ยังไม่มีประวัติการทานยาวันนี้',
+                        style: TextStyle(fontSize: 18, color: Colors.grey),
                       ),
                     ],
                   ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: historyList.length,
-                  itemBuilder: (context, index) {
-                    final med = historyList[index];
-                    return Card(
-                      elevation: 2,
-                      margin: const EdgeInsets.only(bottom: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(15),
+                );
+              }
+
+              return ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: historyList.length,
+                itemBuilder: (context, index) {
+                  final log = historyList[index];
+                  String statusText = '';
+                  Color statusColor = Colors.grey;
+                  IconData statusIcon = Icons.help_outline;
+
+                  if (log.status == 'taken') {
+                    statusText = 'ทานแล้ว';
+                    statusColor = Colors.green;
+                    statusIcon = Icons.check_circle;
+                  } else if (log.status == 'skipped') {
+                    statusText = 'ข้าม';
+                    statusColor = Colors.orange;
+                    statusIcon = Icons.skip_next;
+                  } else if (log.status == 'missed') {
+                    statusText = 'เลยเวลา/ไม่ทาน';
+                    statusColor = Colors.red;
+                    statusIcon = Icons.cancel;
+                  }
+
+                  String actualTimeStr = '${log.actualTimestamp?.hour.toString().padLeft(2, '0')}:${log.actualTimestamp?.minute.toString().padLeft(2, '0')} น.';
+                  String plannedTimeStr = '${log.plannedTimestamp.hour.toString().padLeft(2, '0')}:${log.plannedTimestamp.minute.toString().padLeft(2, '0')} น.';
+
+                  return Card(
+                    elevation: 2,
+                    margin: const EdgeInsets.only(bottom: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15),
+                      side: BorderSide(color: statusColor.withOpacity(0.5)),
+                    ),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.all(16),
+                      leading: Icon(statusIcon, color: statusColor, size: 40),
+                      title: Text(
+                        log.medName,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
                       ),
-                      child: ListTile(
-                        leading: const CircleAvatar(
-                          backgroundColor: Colors.green,
-                          child: Icon(Icons.check, color: Colors.white),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 4),
+                          Text('แผน: $plannedTimeStr'),
+                          Text('เวลาทานจริง: $actualTimeStr', style: TextStyle(color: statusColor, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                      trailing: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: statusColor.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(20),
                         ),
-                        title: Text(
-                          med.name,
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        subtitle: Text(
-                          'เวลาที่ต้องทาน: ${med.time}',
-                          style: const TextStyle(fontSize: 16),
-                        ),
-                        trailing: const Text(
-                          'ทานแล้ว',
-                          style: TextStyle(
-                            color: Colors.green,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
+                        child: Text(
+                          statusText,
+                          style: TextStyle(color: statusColor, fontWeight: FontWeight.bold),
                         ),
                       ),
-                    );
-                  },
-                ),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
         ),
       ],
     );
+  }
+
+  // ==========================================
+  // ฟังก์ชันหาญาติและเพิ่มการเชื่อมต่อ
+  // ==========================================
+  Future<void> _connectToRelative(String code) async {
+    if (code.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('กรุณากรอกรหัสเชื่อมต่อ')),
+      );
+      return;
+    }
+    if (code.trim() == _relativeCode) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ไม่สามารถเชื่อมต่อกับตัวเองได้')),
+      );
+      return;
+    }
+
+    try {
+      // ค้นหาผู้ใช้เป้าหมายที่รหัสตรงกัน
+      final query = await FirebaseFirestore.instance
+          .collection('users')
+          .where('userCode', isEqualTo: code.trim())
+          .limit(1)
+          .get();
+
+      if (query.docs.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ไม่พบผู้ใช้ที่ใช้รหัสนี้')),
+        );
+        return;
+      }
+
+      final targetDoc = query.docs.first;
+      final targetUid = targetDoc.id;
+
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      final myUid = prefs.getString('uid');
+
+      if (myUid == null) return;
+
+      // เพิ่มเป้าหมายใน monitoredUserUids ของเรา (เพื่อติดตามสถานะยาของ target)
+      await FirebaseFirestore.instance.collection('users').doc(myUid).update({
+        'monitoredUserUids': FieldValue.arrayUnion([targetUid])
+      });
+      // เพิ่มเราใน followerUids ของเป้าหมาย (ให้เค้ารู้ว่าเรากำลังติดตามอยู่)
+      await FirebaseFirestore.instance.collection('users').doc(targetUid).update({
+        'followerUids': FieldValue.arrayUnion([myUid])
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('เชื่อมต่อกับคุณ "${targetDoc.data()['username']}" สำเร็จ!')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('เกิดข้อผิดพลาดในการเชื่อมต่อ: $e')),
+      );
+    }
   }
 
   // ==========================================
@@ -640,6 +757,7 @@ class _HomeScreenState extends State<HomeScreen> {
     TextEditingController nameController = TextEditingController(
       text: _userName,
     );
+    TextEditingController relativeController = TextEditingController();
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -780,6 +898,71 @@ class _HomeScreenState extends State<HomeScreen> {
                         },
                       ),
                     ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+        
+        // 🌟 Card กรอกรหัสเชื่อมต่อผู้ป่วย
+        Card(
+          elevation: 3,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.link, color: Colors.green),
+                    SizedBox(width: 10),
+                    Text(
+                      'เชื่อมต่อเพื่อติดตามการทานยา',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'กรอกรหัสเชื่อมต่อของผู้ป่วยที่คุณต้องการติดตามสถานะการทานยา',
+                  style: TextStyle(color: Colors.grey),
+                ),
+                const SizedBox(height: 15),
+                TextField(
+                  controller: relativeController,
+                  decoration: const InputDecoration(
+                    labelText: 'รหัสผู้ป่วย/ญาติ 6 หลัก',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.person_search),
+                  ),
+                  maxLength: 6,
+                  textCapitalization: TextCapitalization.characters,
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: () {
+                      _connectToRelative(relativeController.text);
+                      relativeController.clear();
+                    },
+                    child: const Text(
+                      'เชื่อมต่อ',
+                      style: TextStyle(fontSize: 16),
+                    ),
                   ),
                 ),
               ],
