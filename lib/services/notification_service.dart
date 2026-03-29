@@ -39,10 +39,12 @@ class NotificationService {
       initializationSettings,
       onDidReceiveNotificationResponse: (NotificationResponse response) {
         if (response.payload != null && response.payload!.isNotEmpty) {
-          navigatorKey.currentState?.pushNamed(
-            '/med_detail',
-            arguments: response.payload!, // เป็น scheduleId string
-          );
+          if (response.payload!.startsWith('alert_')) {
+             final alertId = response.payload!.replaceFirst('alert_', '');
+             navigatorKey.currentState?.pushNamed('/alert_detail', arguments: alertId);
+          } else {
+             navigatorKey.currentState?.pushNamed('/med_detail', arguments: response.payload!);
+          }
         }
       },
     );
@@ -141,7 +143,7 @@ class NotificationService {
         uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
         payload: scheduleId,
       );
-      print('✅ [NOTIF] ตั้งปลุกหลัก ID=${schedIdInt * 10} เวลา=$baseTime');
+      debugPrint('✅ [NOTIF] ตั้งปลุกหลัก ID=${schedIdInt * 10} เวลา=$baseTime');
       
       await flutterLocalNotificationsPlugin.zonedSchedule(
         schedIdInt * 10 + 2,
@@ -164,9 +166,9 @@ class NotificationService {
         uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
         payload: scheduleId,
       );
-      print('✅ [NOTIF] ตั้งปลุกซ้ำสำเร็จ schedIdInt=$schedIdInt เวลาตั้ง=$baseTime');
+      debugPrint('✅ [NOTIF] ตั้งปลุกซ้ำสำเร็จ schedIdInt=$schedIdInt เวลาตั้ง=$baseTime');
     } catch (e) {
-      print('❌ [NOTIF] ตั้งแจ้งเตือนผู้ใช้ล้มเหลว: $e');
+      debugPrint('❌ [NOTIF] ตั้งแจ้งเตือนผู้ใช้ล้มเหลว: $e');
     }
 
     try {
@@ -180,7 +182,7 @@ class NotificationService {
         uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
       );
     } catch (e) {
-      print('❌ [DEBUG] ตั้งแจ้งเตือนญาติล้มเหลว: $e');
+      debugPrint('❌ [DEBUG] ตั้งแจ้งเตือนญาติล้มเหลว: $e');
     }
   }
 
@@ -195,5 +197,37 @@ class NotificationService {
     int schedIdInt = (scheduleId.hashCode.abs() % 100000000);
     await flutterLocalNotificationsPlugin.cancel(schedIdInt * 10);
     await cancelPendingAlerts(scheduleId);
+  }
+
+  // 🌟 (ใหม่) สำหรับเด้งบอกทันทีเมื่อญาติลืมทานยา
+  Future<void> showRelativeAlert({
+    required String alertId,
+    required String patientName,
+    required String medNames,
+    required String timeString,
+  }) async {
+    const androidDetails = AndroidNotificationDetails(
+      'relative_alert_channel',
+      'การแจ้งเตือนสำหรับญาติ (ฉุกเฉิน)',
+      channelDescription: 'แจ้งเตือนเมื่อผู้ป่วยในความดูแลลืมทานยา',
+      importance: Importance.max,
+      priority: Priority.high,
+      playSound: true,
+      enableVibration: true,
+      styleInformation: BigTextStyleInformation(''), // เพื่อให้แสดงข้อความยาวๆ ได้
+    );
+    const platformDetails = NotificationDetails(android: androidDetails);
+
+    try {
+      await flutterLocalNotificationsPlugin.show(
+        alertId.hashCode.abs() % 100000, 
+        '⚠️ ผู้ป่วยลืมทานยา!',
+        'คุณ $patientName ลืมทานยา $medNames รอบเวลา $timeString น. กรุณาติดต่อผู้ป่วย',
+        platformDetails,
+        payload: 'alert_$alertId', 
+      );
+    } catch (e) {
+      debugPrint('❌ [NOTIF] ส่งแจ้งเตือนญาติล้มเหลว: $e');
+    }
   }
 }

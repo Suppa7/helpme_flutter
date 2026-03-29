@@ -83,9 +83,9 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
     final TextEditingController amountController = TextEditingController();
     final TextEditingController additionalInfoController = TextEditingController();
     String? selectedImagePath;
-    String _selectedUnit = 'เม็ด';
-    String _repeatType = 'everyday';
-    List<String> _selectedDays = [];
+    String selectedUnit = 'เม็ด';
+    String repeatType = 'everyday';
+    List<String> selectedDays = [];
     
     final List<String> allDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
     final Map<String, String> dayNamesTh = {
@@ -131,7 +131,7 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                             setDialogState(() => selectedImagePath = image.path);
                           }
                         } catch (e) {
-                          // Handle error like permission denied
+                          debugPrint(e.toString());
                         }
                       },
                       child: Container(
@@ -201,7 +201,7 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                         Expanded(
                           flex: 3,
                           child: DropdownButtonFormField<String>(
-                            value: _selectedUnit,
+                            initialValue: selectedUnit,
                             decoration: const InputDecoration(
                                 labelText: 'หน่วย',
                                 border: OutlineInputBorder()),
@@ -222,22 +222,22 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                                   value: 'ซอง', child: Text('ซอง')),
                             ],
                             onChanged: (val) =>
-                                setDialogState(() => _selectedUnit = val!),
+                                setDialogState(() => selectedUnit = val!),
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 15),
                     DropdownButtonFormField<String>(
-                      value: _repeatType,
+                      initialValue: repeatType,
                       decoration: const InputDecoration(labelText: 'วันที่กิน', border: OutlineInputBorder()),
                       items: const [
                         DropdownMenuItem(value: 'everyday', child: Text('กินทุกวัน')),
                         DropdownMenuItem(value: 'custom', child: Text('เลือกวัน (จ.-อา.)')),
                       ],
-                      onChanged: (val) => setDialogState(() => _repeatType = val!),
+                      onChanged: (val) => setDialogState(() => repeatType = val!),
                     ),
-                    if (_repeatType == 'custom') ...[
+                    if (repeatType == 'custom') ...[
                       const SizedBox(height: 10),
                       Wrap(
                         spacing: 8.0,
@@ -245,13 +245,13 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                         children: allDays.map((day) {
                           return FilterChip(
                             label: Text(dayNamesTh[day]!),
-                            selected: _selectedDays.contains(day),
+                            selected: selectedDays.contains(day),
                             onSelected: (bool selected) {
                               setDialogState(() {
                                 if (selected) {
-                                  _selectedDays.add(day);
+                                  selectedDays.add(day);
                                 } else {
-                                  _selectedDays.remove(day);
+                                  selectedDays.remove(day);
                                 }
                               });
                             },
@@ -285,10 +285,10 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                         userId: widget.schedule.userId,
                         medName: nameController.text,
                         amount: num.tryParse(amountController.text) ?? 1,
-                        unit: _selectedUnit,
+                        unit: selectedUnit,
                         imageUrl: selectedImagePath,
                         notificationId: 0,
-                        days: _repeatType == 'everyday' ? ['Everyday'] : (_selectedDays.isEmpty ? ['Everyday'] : _selectedDays),
+                        days: repeatType == 'everyday' ? ['Everyday'] : (selectedDays.isEmpty ? ['Everyday'] : selectedDays),
                         additionalInfo: additionalInfoController.text.isNotEmpty ? additionalInfoController.text : null,
                       );
 
@@ -304,11 +304,12 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                             userName: _userName,
                           );
                         } catch (e) {
-                           // Print error or show snackbar
+                           debugPrint(e.toString());
                         }
                       }
 
-                      if (mounted) Navigator.pop(context);
+                      if (!context.mounted) return;
+                      Navigator.pop(context);
                       _refreshMedications();
                     }
                   },
@@ -327,9 +328,9 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
     final TextEditingController amountController = TextEditingController(text: med.amount.toString());
     final TextEditingController additionalInfoController = TextEditingController(text: med.additionalInfo ?? '');
     String? selectedImagePath = med.imageUrl;
-    String _selectedUnit = med.unit;
-    String _repeatType = med.days.contains('Everyday') ? 'everyday' : 'custom';
-    List<String> _selectedDays = List.from(med.days);
+    String selectedUnit = med.unit;
+    String repeatType = med.days.contains('Everyday') ? 'everyday' : 'custom';
+    List<String> selectedDays = List.from(med.days);
     
     final List<String> allDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
     final Map<String, String> dayNamesTh = {
@@ -374,7 +375,9 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                           if (image != null) {
                             setDialogState(() => selectedImagePath = image.path);
                           }
-                        } catch (e) {}
+                        } catch (e) {
+                          debugPrint(e.toString());
+                        }
                       },
                       child: Container(
                         height: 120,
@@ -443,7 +446,7 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                         Expanded(
                           flex: 3,
                           child: DropdownButtonFormField<String>(
-                            value: _selectedUnit,
+                            initialValue: selectedUnit,
                             decoration: const InputDecoration(
                                 labelText: 'หน่วย',
                                 border: OutlineInputBorder()),
@@ -456,22 +459,22 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                               DropdownMenuItem(value: 'หยด', child: Text('หยด')),
                               DropdownMenuItem(value: 'ซอง', child: Text('ซอง')),
                             ],
-                            onChanged: (val) => setDialogState(() => _selectedUnit = val!),
+                            onChanged: (val) => setDialogState(() => selectedUnit = val!),
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 15),
                     DropdownButtonFormField<String>(
-                      value: _repeatType,
+                      initialValue: repeatType,
                       decoration: const InputDecoration(labelText: 'วันที่กิน', border: OutlineInputBorder()),
                       items: const [
                         DropdownMenuItem(value: 'everyday', child: Text('กินทุกวัน')),
                         DropdownMenuItem(value: 'custom', child: Text('เลือกวัน (จ.-อา.)')),
                       ],
-                      onChanged: (val) => setDialogState(() => _repeatType = val!),
+                      onChanged: (val) => setDialogState(() => repeatType = val!),
                     ),
-                    if (_repeatType == 'custom') ...[
+                    if (repeatType == 'custom') ...[
                       const SizedBox(height: 10),
                       Wrap(
                         spacing: 8.0,
@@ -479,13 +482,13 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                         children: allDays.map((day) {
                           return FilterChip(
                             label: Text(dayNamesTh[day]!),
-                            selected: _selectedDays.contains(day),
+                            selected: selectedDays.contains(day),
                             onSelected: (bool selected) {
                               setDialogState(() {
                                 if (selected) {
-                                  _selectedDays.add(day);
+                                  selectedDays.add(day);
                                 } else {
-                                  _selectedDays.remove(day);
+                                  selectedDays.remove(day);
                                 }
                               });
                             },
@@ -514,9 +517,9 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                       
                       med.medName = nameController.text;
                       med.amount = num.tryParse(amountController.text) ?? med.amount;
-                      med.unit = _selectedUnit;
+                      med.unit = selectedUnit;
                       med.imageUrl = selectedImagePath;
-                      med.days = _repeatType == 'everyday' ? ['Everyday'] : (_selectedDays.isEmpty ? ['Everyday'] : _selectedDays);
+                      med.days = repeatType == 'everyday' ? ['Everyday'] : (selectedDays.isEmpty ? ['Everyday'] : selectedDays);
                       med.additionalInfo = additionalInfoController.text.isNotEmpty ? additionalInfoController.text : null;
 
                       await DatabaseHelper.instance.updateMedication(med);
@@ -528,9 +531,12 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                           timeString: widget.schedule.time,
                           userName: _userName,
                         );
-                      } catch (e) {}
+                      } catch (e) {
+                         debugPrint(e.toString());
+                      }
 
-                      if (mounted) Navigator.pop(context);
+                      if (!context.mounted) return;
+                      Navigator.pop(context);
                       _refreshMedications();
                     }
                   },

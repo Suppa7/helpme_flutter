@@ -75,3 +75,20 @@ note: string — บันทึกเพิ่มเติม เช่น "ก
 takenBy: string — UID ของคนที่กดบันทึก (กรณีญาติเป็นคนกดให้ตอนอยู่ด้วยกัน)
 
 snoozeCount: number (เก็บว่าเลื่อนไปกี่ครั้ง)
+
+[Collection] MissedMedicationAlerts
+(ใหม่) สำหรับแจ้งเตือนญาติแบบ Real-time Listener (แทน FCM/Cloud Functions)
+
+alertId (Document ID): string
+
+patientUid: string — UID ของผู้ป่วยที่ลืมทานยา
+
+patientName: string — ชื่อผู้ป่วย
+
+relativeUids: array [uid_1, uid_2] — UID ของญาติที่ติดตามอยู่ (ดึงมาจาก followerUids)
+
+medNames: string — รายชื่อยาที่ลืมทาน
+
+plannedTime: timestamp — เวลาที่ควรจะทาน
+
+status: string — 'pending' (รอรับทราบ), 'acknowledged' (ญาติกดรับทราบแล้ว)

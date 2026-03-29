@@ -6,6 +6,7 @@ import 'package:test/models/medication.dart';
 import 'package:test/models/medication_log.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'firebase_options.dart';
 import 'services/notification_service.dart';
 import 'screens/home_screen.dart';
@@ -47,7 +48,9 @@ class MyApp extends StatelessWidget {
         '/register': (context) => const RegisterScreen(),
         '/home': (context) => const HomeScreen(),
         '/med_detail': (context) =>
-            const MedicationDetailScreen(), // 🌟 หน้าใหม่
+            const MedicationDetailScreen(), // 🌟 หน้ากดยืนยันกินยาด้วยตัวเอง
+        '/alert_detail': (context) =>
+            const AlertDetailScreen(), // 🌟 หน้าสำหรับญาติ กดยืนยันการแจ้งเตือน
       },
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
@@ -441,6 +444,16 @@ class _LoginScreenState extends State<LoginScreen> {
         await prefs.setString('uid', uid);
         await prefs.setString('userName', userDoc.data()['username'] ?? '');
 
+        // 🌟 ขอสิทธิ์แจ้งเตือนสำหรับ FCM และอัปเดต Token
+        FirebaseMessaging messaging = FirebaseMessaging.instance;
+        await messaging.requestPermission();
+        String? fcmToken = await messaging.getToken();
+        if (fcmToken != null) {
+          await FirebaseFirestore.instance.collection('users').doc(uid).update({
+            'fcmToken': fcmToken,
+          });
+        }
+
         if (mounted) Navigator.pushReplacementNamed(context, '/home');
       } else {
         if (mounted) {
@@ -543,6 +556,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
       final userCode = _generateUserCode();
 
+      // 🌟 ขอสิทธิ์แจ้งเตือนสำหรับ FCM และขอ Token
+      FirebaseMessaging messaging = FirebaseMessaging.instance;
+      await messaging.requestPermission();
+      String? fcmToken = await messaging.getToken();
+
       // บันทึกข้อมูลลง Firestore ใน Collection users
       final docRef = await FirebaseFirestore.instance.collection('users').add({
         'username': _nameController.text.trim(),
@@ -551,7 +569,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         'userCode': userCode,
         'monitoredUserUids': [],
         'followerUids': [],
-        'fcmToken': '', // เตรียมไว้สำหรับแจ้งเตือนภายหลัง
+        'fcmToken': fcmToken ?? '',
         'createdAt': FieldValue.serverTimestamp(),
       });
 
@@ -603,6 +621,177 @@ class _RegisterScreenState extends State<RegisterScreen> {
             )
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ==========================================
+// 🚨 หน้าการแจ้งเตือนสำหรับญาติ (รับทราบการขาดทานยา)
+// ==========================================
+class AlertDetailScreen extends StatefulWidget {
+  const AlertDetailScreen({super.key});
+
+  @override
+  State<AlertDetailScreen> createState() => _AlertDetailScreenState();
+}
+
+class _AlertDetailScreenState extends State<AlertDetailScreen> {
+  String _alertId = '';
+  Map<String, dynamic>? _alertData;
+  bool _isLoading = true;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final args = ModalRoute.of(context)!.settings.arguments;
+    if (args is String) {
+      _alertId = args;
+      _loadAlert(_alertId);
+    }
+  }
+
+  Future<void> _loadAlert(String id) async {
+    try {
+      final doc = await FirebaseFirestore.instance.collection('MissedMedicationAlerts').doc(id).get();
+      if (doc.exists) {
+        setState(() => _alertData = doc.data());
+      }
+    } catch (e) {
+      debugPrint('Error loading alert: $e');
+    }
+    setState(() => _isLoading = false);
+  }
+
+  Future<void> _acknowledge() async {
+    try {
+      // 1. อัปเดตสถานะเป็น 'acknowledged'
+      await FirebaseFirestore.instance.collection('MissedMedicationAlerts').doc(_alertId).update({
+        'status': 'acknowledged'
+      });
+
+      // 2. ยกเลิก Notification ใน StatusBar แบบ Manual
+      int schedIdInt = (_alertId.hashCode.abs() % 100000);
+      await NotificationService().flutterLocalNotificationsPlugin.cancel(schedIdInt);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('คุณได้รับทราบการแจ้งเตือนแล้ว')));
+        Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e')));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (_alertData == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('การแจ้งเตือนผู้ป่วย')),
+        body: const Center(child: Text('ไม่พบข้อมูลการแจ้งเตือนนี้ หรือถูกรับทราบไปแล้ว')),
+      );
+    }
+
+    final String patientName = _alertData!['patientName'] ?? 'ผู้ป่วย';
+    final String medNames = _alertData!['medNames'] ?? '';
+    final String status = _alertData!['status'] ?? 'pending';
+
+    String timeStr = '';
+    if (_alertData!['plannedTime'] != null) {
+      final d = (_alertData!['plannedTime'] as Timestamp).toDate();
+      timeStr = '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')} น.';
+    }
+
+    return Scaffold(
+      backgroundColor: Colors.red.shade50,
+      appBar: AppBar(
+        title: const Text('⚠️ แจ้งเตือน: ลืมทานยา'),
+        backgroundColor: Colors.red.shade800,
+        foregroundColor: Colors.white,
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          children: [
+            const Icon(Icons.warning_amber_rounded, size: 100, color: Colors.redAccent),
+            const SizedBox(height: 20),
+            Text(
+              'ถึงเวลาทานยา แต่ผู้ป่วยยังไม่ได้ทาน!',
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.red.shade900),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 30),
+            Card(
+              elevation: 4,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildInfoRow(Icons.person, 'ชื่อผู้ป่วย:', patientName),
+                    const Divider(),
+                    _buildInfoRow(Icons.access_time_filled, 'เวลาที่กำหนด:', timeStr),
+                    const Divider(),
+                    _buildInfoRow(Icons.medication, 'รายการยา:', medNames),
+                  ],
+                ),
+              ),
+            ),
+            const Spacer(),
+            if (status == 'pending')
+              ElevatedButton.icon(
+                onPressed: _acknowledge,
+                icon: const Icon(Icons.check_circle_outline, size: 28),
+                label: const Text('รับทราบการแจ้งเตือน', style: TextStyle(fontSize: 20)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red.shade600,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(double.infinity, 60),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                ),
+              )
+            else
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(color: Colors.green.shade100, borderRadius: BorderRadius.circular(15)),
+                child: const Text('รับทราบแล้ว', textAlign: TextAlign.center, style: TextStyle(color: Colors.green, fontSize: 20, fontWeight: FontWeight.bold)),
+              ),
+            const SizedBox(height: 10),
+            TextButton(
+              onPressed: () => Navigator.pushNamedAndRemoveUntil(context, '/home', (r) => false),
+              child: const Text('กลับสู่หน้าหลัก', style: TextStyle(fontSize: 18, color: Colors.black54)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(IconData icon, String title, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: Colors.red.shade300, size: 28),
+          const SizedBox(width: 15),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: TextStyle(color: Colors.grey.shade700, fontSize: 16)),
+                Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

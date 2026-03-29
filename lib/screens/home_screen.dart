@@ -1,3 +1,4 @@
+import 'dart:async'; // สำหรับ StreamSubscription
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -22,6 +23,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<ScheduleModel> _schedules = [];
   bool _isLoading = true;
   final Map<String, bool> _hasEmptyStock = {}; // เก็บสถานะว่าตารางนี้มียาหมดหรือไม่
+  StreamSubscription? _alertSub; // ฟังแจ้งเตือนแบบเรียลไทม์
 
   @override
   void initState() {
@@ -31,6 +33,72 @@ class _HomeScreenState extends State<HomeScreen> {
     _refreshSchedules();
     // 🌟 ตรวจสอบและบันทึก 'missed' สำหรับยาที่ผ่านเวลาไปแล้วแต่ยังไม่ได้ทาน
     DatabaseHelper.instance.checkAndMarkMissedLogs();
+    
+    // 🌟 ดักฟังการแจ้งเตือนจากญาติ (Real-time Firestore)
+    _listenToRelativeAlerts();
+  }
+
+  void _listenToRelativeAlerts() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? uid = prefs.getString('uid');
+    if (uid == null) return;
+
+    _alertSub = FirebaseFirestore.instance.collection('MissedMedicationAlerts')
+      .where('relativeUids', arrayContains: uid)
+      .where('status', isEqualTo: 'pending')
+      .snapshots().listen((snapshot) async {
+        if (snapshot.docChanges.isEmpty) return;
+        
+        List<String> notified = prefs.getStringList('notifiedAlerts') ?? [];
+        bool prefsUpdated = false;
+
+        for (var change in snapshot.docChanges) {
+          if (change.type == DocumentChangeType.added) {
+            final doc = change.doc;
+            final data = doc.data();
+            
+            // ป้องกันการเด้งแจ้งเตือนซ้ำ (เช็กว่าเคยถูกแจ้งเตือน Alert ID นี้ในเครื่องนี้หรือยัง)
+            if (data != null && !notified.contains(doc.id)) {
+              
+              // ตรวจสอบว่าเก่าเกินไปไหม (เช่น เกิน 1 วันแล้วข้ามไป)
+              final createdAt = data['createdAt'] as Timestamp?;
+              if (createdAt != null) {
+                final diff = DateTime.now().difference(createdAt.toDate());
+                if (diff.inDays >= 1) continue;
+              }
+
+              final patientName = data['patientName'] ?? 'ผู้ป่วย';
+              final medNames = data['medNames'] ?? '';
+              final plannedTime = data['plannedTime'] as Timestamp?;
+              String timeStr = '';
+              if (plannedTime != null) {
+                final d = plannedTime.toDate();
+                timeStr = '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+              }
+              
+              // สั่งแสดง Local Notification ทันที
+              await NotificationService().showRelativeAlert(
+                alertId: doc.id,
+                patientName: patientName,
+                medNames: medNames,
+                timeString: timeStr,
+              );
+
+              notified.add(doc.id);
+              prefsUpdated = true;
+            }
+          }
+        }
+        if (prefsUpdated) {
+          await prefs.setStringList('notifiedAlerts', notified);
+        }
+    });
+  }
+
+  @override
+  void dispose() {
+    _alertSub?.cancel(); // อย่าลืมยกเลิกฟัง
+    super.dispose();
   }
 
   // ==========================================
@@ -59,7 +127,7 @@ class _HomeScreenState extends State<HomeScreen> {
           await prefs.setString('userName', userName);
         }
       } catch (e) {
-        print('Error loading user code: $e');
+        debugPrint('Error loading user code: $e');
       }
     }
 
@@ -124,8 +192,8 @@ class _HomeScreenState extends State<HomeScreen> {
     TimeOfDay selectedTime = TimeOfDay.now();
     
     // ตั้งค่า default
-    String _selectedMeal = 'morning';
-    String _selectedInstruction = 'after_meal';
+    String selectedMeal = 'morning';
+    String selectedInstruction = 'after_meal';
 
     await showDialog(
       context: context,
@@ -154,7 +222,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     DropdownButtonFormField<String>(
-                      value: _selectedMeal,
+                      initialValue: selectedMeal,
                       decoration: const InputDecoration(labelText: 'มื้ออาหาร', border: OutlineInputBorder()),
                       items: const [
                         DropdownMenuItem(value: 'morning', child: Text('เช้า')),
@@ -162,17 +230,17 @@ class _HomeScreenState extends State<HomeScreen> {
                         DropdownMenuItem(value: 'dinner', child: Text('เย็น')),
                         DropdownMenuItem(value: 'before_bed', child: Text('ก่อนนอน')),
                       ],
-                      onChanged: (val) => setDialogState(() => _selectedMeal = val!),
+                      onChanged: (val) => setDialogState(() => selectedMeal = val!),
                     ),
                     const SizedBox(height: 15),
                     DropdownButtonFormField<String>(
-                      value: _selectedInstruction,
+                      initialValue: selectedInstruction,
                       decoration: const InputDecoration(labelText: 'เงื่อนไข', border: OutlineInputBorder()),
                       items: const [
                         DropdownMenuItem(value: 'before_meal', child: Text('ก่อนอาหาร')),
                         DropdownMenuItem(value: 'after_meal', child: Text('หลังอาหาร')),
                       ],
-                      onChanged: (val) => setDialogState(() => _selectedInstruction = val!),
+                      onChanged: (val) => setDialogState(() => selectedInstruction = val!),
                     ),
                     const SizedBox(height: 15),
                     Row(
@@ -226,16 +294,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
                     final newSchedule = ScheduleModel(
                       userId: '', // เดี๋ยว DatabaseHelper เติมให้
-                      meal: _selectedMeal,
+                      meal: selectedMeal,
                       time: formattedTime,
-                      instruction: _selectedInstruction,
+                      instruction: selectedInstruction,
                       days: ['Everyday'], 
                       isActive: true
                     );
                     
                     await DatabaseHelper.instance.insertSchedule(newSchedule);
 
-                    if (mounted) Navigator.pop(context);
+                    if (!context.mounted) return;
+                    Navigator.pop(context);
                     _refreshSchedules();
                   },
                   child: const Text('บันทึก', style: TextStyle(fontSize: 18)),
@@ -259,8 +328,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     
     // ตั้งค่าเริ่มต้นจากของเดิม
-    String _selectedMeal = sched.meal;
-    String _selectedInstruction = sched.instruction;
+    String selectedMeal = sched.meal;
+    String selectedInstruction = sched.instruction;
 
     await showDialog(
       context: context,
@@ -289,7 +358,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     DropdownButtonFormField<String>(
-                      value: _selectedMeal,
+                      initialValue: selectedMeal,
                       decoration: const InputDecoration(labelText: 'มื้ออาหาร', border: OutlineInputBorder()),
                       items: const [
                         DropdownMenuItem(value: 'morning', child: Text('เช้า')),
@@ -297,17 +366,17 @@ class _HomeScreenState extends State<HomeScreen> {
                         DropdownMenuItem(value: 'dinner', child: Text('เย็น')),
                         DropdownMenuItem(value: 'before_bed', child: Text('ก่อนนอน')),
                       ],
-                      onChanged: (val) => setDialogState(() => _selectedMeal = val!),
+                      onChanged: (val) => setDialogState(() => selectedMeal = val!),
                     ),
                     const SizedBox(height: 15),
                     DropdownButtonFormField<String>(
-                      value: _selectedInstruction,
+                      initialValue: selectedInstruction,
                       decoration: const InputDecoration(labelText: 'เงื่อนไข', border: OutlineInputBorder()),
                       items: const [
                         DropdownMenuItem(value: 'before_meal', child: Text('ก่อนอาหาร')),
                         DropdownMenuItem(value: 'after_meal', child: Text('หลังอาหาร')),
                       ],
-                      onChanged: (val) => setDialogState(() => _selectedInstruction = val!),
+                      onChanged: (val) => setDialogState(() => selectedInstruction = val!),
                     ),
                     const SizedBox(height: 15),
                     Row(
@@ -362,16 +431,17 @@ class _HomeScreenState extends State<HomeScreen> {
                     final updatedSchedule = ScheduleModel(
                       scheduleId: sched.scheduleId,
                       userId: sched.userId,
-                      meal: _selectedMeal,
+                      meal: selectedMeal,
                       time: formattedTime,
-                      instruction: _selectedInstruction,
+                      instruction: selectedInstruction,
                       days: sched.days, 
                       isActive: sched.isActive
                     );
                     
                     await DatabaseHelper.instance.updateSchedule(updatedSchedule);
 
-                    if (mounted) Navigator.pop(context);
+                    if (!context.mounted) return;
+                    Navigator.pop(context);
                     _refreshSchedules();
                   },
                   child: const Text('บันทึก', style: TextStyle(fontSize: 18)),
@@ -570,7 +640,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // ==========================================
-  // 2. หน้าประวัติการทานยา (แสดงเฉพาะยาที่กินแล้ว)
+  // 2. หน้าประวัติการทานยา (แสดงรวมของตัวเองและคนที่ติดตามอยู่)
   // ==========================================
   Widget _buildHistoryView() {
     return Column(
@@ -590,8 +660,8 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         Expanded(
-          child: FutureBuilder<List<MedicationLog>>(
-            future: DatabaseHelper.instance.getTodayMedicationLogs(),
+          child: FutureBuilder<List<Map<String, dynamic>>>(
+            future: DatabaseHelper.instance.getSharedTodayMedicationLogs(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
@@ -599,9 +669,9 @@ class _HomeScreenState extends State<HomeScreen> {
               if (snapshot.hasError) {
                 return Center(child: Text('เกิดข้อผิดพลาด: ${snapshot.error}'));
               }
-              final historyList = snapshot.data ?? [];
+              final groupedList = snapshot.data ?? [];
               
-              if (historyList.isEmpty) {
+              if (groupedList.isEmpty) {
                 return Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -613,7 +683,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(height: 10),
                       const Text(
-                        'ยังไม่มีประวัติการทานยาวันนี้',
+                        'ไม่พบประวัติการทานยา',
                         style: TextStyle(fontSize: 18, color: Colors.grey),
                       ),
                     ],
@@ -623,64 +693,99 @@ class _HomeScreenState extends State<HomeScreen> {
 
               return ListView.builder(
                 padding: const EdgeInsets.all(16),
-                itemCount: historyList.length,
+                itemCount: groupedList.length,
                 itemBuilder: (context, index) {
-                  final log = historyList[index];
-                  String statusText = '';
-                  Color statusColor = Colors.grey;
-                  IconData statusIcon = Icons.help_outline;
+                  final group = groupedList[index];
+                  final String username = group['username'];
+                  final List<MedicationLog> logs = group['logs'];
+                  final bool isMe = index == 0; // เราเอาของตัวเองไว้ index 0 เสมอใน getSharedTodayMedicationLogs
 
-                  if (log.status == 'taken') {
-                    statusText = 'ทานแล้ว';
-                    statusColor = Colors.green;
-                    statusIcon = Icons.check_circle;
-                  } else if (log.status == 'skipped') {
-                    statusText = 'ข้าม';
-                    statusColor = Colors.orange;
-                    statusIcon = Icons.skip_next;
-                  } else if (log.status == 'missed') {
-                    statusText = 'เลยเวลา/ไม่ทาน';
-                    statusColor = Colors.red;
-                    statusIcon = Icons.cancel;
-                  }
-
-                  String actualTimeStr = '${log.actualTimestamp?.hour.toString().padLeft(2, '0')}:${log.actualTimestamp?.minute.toString().padLeft(2, '0')} น.';
-                  String plannedTimeStr = '${log.plannedTimestamp.hour.toString().padLeft(2, '0')}:${log.plannedTimestamp.minute.toString().padLeft(2, '0')} น.';
-
-                  return Card(
-                    elevation: 2,
-                    margin: const EdgeInsets.only(bottom: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(15),
-                      side: BorderSide(color: statusColor.withOpacity(0.5)),
-                    ),
-                    child: ListTile(
-                      contentPadding: const EdgeInsets.all(16),
-                      leading: Icon(statusIcon, color: statusColor, size: 40),
-                      title: Text(
-                        log.medName,
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                      ),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const SizedBox(height: 4),
-                          Text('แผน: $plannedTimeStr'),
-                          Text('เวลาทานจริง: $actualTimeStr', style: TextStyle(color: statusColor, fontWeight: FontWeight.bold)),
-                        ],
-                      ),
-                      trailing: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: statusColor.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          statusText,
-                          style: TextStyle(color: statusColor, fontWeight: FontWeight.bold),
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8.0),
+                        child: Row(
+                          children: [
+                            Icon(isMe ? Icons.person : Icons.people_outline, color: isMe ? Colors.blue : Colors.orange),
+                            const SizedBox(width: 8),
+                            Text(
+                              isMe ? 'ประวัติของฉัน ($username)' : 'ประวัติของ $username',
+                              style: TextStyle(
+                                fontSize: 18, 
+                                fontWeight: FontWeight.bold,
+                                color: isMe ? Colors.blue.shade800 : Colors.orange.shade800
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ),
+                      if (logs.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 32.0, bottom: 16.0),
+                          child: Text('ยังไม่มีประวัติการทานยาวันนี้', style: TextStyle(color: Colors.grey.shade600)),
+                        )
+                      else
+                        ...logs.map((log) {
+                          String statusText = '';
+                          Color statusColor = Colors.grey;
+                          IconData statusIcon = Icons.help_outline;
+
+                          if (log.status == 'taken') {
+                            statusText = 'ทานแล้ว';
+                            statusColor = Colors.green;
+                            statusIcon = Icons.check_circle;
+                          } else if (log.status == 'skipped') {
+                            statusText = 'ข้าม';
+                            statusColor = Colors.orange;
+                            statusIcon = Icons.skip_next;
+                          } else if (log.status == 'missed') {
+                            statusText = 'เลยเวลา/ไม่ทาน';
+                            statusColor = Colors.red;
+                            statusIcon = Icons.cancel;
+                          }
+
+                          String actualTimeStr = '${(log.actualTimestamp ?? log.plannedTimestamp).hour.toString().padLeft(2, '0')}:${(log.actualTimestamp ?? log.plannedTimestamp).minute.toString().padLeft(2, '0')} น.';
+                          String plannedTimeStr = '${log.plannedTimestamp.hour.toString().padLeft(2, '0')}:${log.plannedTimestamp.minute.toString().padLeft(2, '0')} น.';
+
+                          return Card(
+                            elevation: 2,
+                            margin: const EdgeInsets.only(bottom: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(15),
+                              side: BorderSide(color: statusColor.withValues(alpha: 0.5)),
+                            ),
+                            child: ListTile(
+                              contentPadding: const EdgeInsets.all(16),
+                              leading: Icon(statusIcon, color: statusColor, size: 40),
+                              title: Text(
+                                log.medName,
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                              ),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const SizedBox(height: 4),
+                                  Text('แผน: $plannedTimeStr'),
+                                  Text('เวลาบันทึก: $actualTimeStr', style: TextStyle(color: statusColor, fontWeight: FontWeight.bold)),
+                                ],
+                              ),
+                              trailing: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: statusColor.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  statusText,
+                                  style: TextStyle(color: statusColor, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
+                      const SizedBox(height: 16),
+                    ],
                   );
                 },
               );
@@ -717,6 +822,7 @@ class _HomeScreenState extends State<HomeScreen> {
           .get();
 
       if (query.docs.isEmpty) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('ไม่พบผู้ใช้ที่ใช้รหัสนี้')),
         );
@@ -740,10 +846,12 @@ class _HomeScreenState extends State<HomeScreen> {
         'followerUids': FieldValue.arrayUnion([myUid])
       });
 
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('เชื่อมต่อกับคุณ "${targetDoc.data()['username']}" สำเร็จ!')),
       );
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('เกิดข้อผิดพลาดในการเชื่อมต่อ: $e')),
       );
@@ -810,6 +918,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       setState(() {
                         _userName = nameController.text;
                       });
+                      if (!mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text('บันทึกชื่อเรียบร้อยแล้ว'),

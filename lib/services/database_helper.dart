@@ -252,6 +252,68 @@ class DatabaseHelper {
     return logs;
   }
 
+  // READ: ดึงประวัติการกินยาของวันนี้ (กวาดรวมของตัวเองและคนที่ติดตามอยู่)
+  // คืนค่าเป็น List ของ Map ที่มี uid, username, และ logs
+  Future<List<Map<String, dynamic>>> getSharedTodayMedicationLogs() async {
+    final uid = await _getUserId();
+    if (uid == null) return [];
+
+    final now = DateTime.now();
+    final startOfDay = DateTime(now.year, now.month, now.day);
+    final endOfDay = DateTime(now.year, now.month, now.day, 23, 59, 59);
+
+    // 1. หา UID ที่เรากำลังติดตามอยู่พร้อมข้อมูลผู้ใช้
+    final userDoc = await _db.collection('users').doc(uid).get();
+    List<dynamic> monitoredList = userDoc.data()?['monitoredUserUids'] ?? [];
+    
+    List<Map<String, dynamic>> targetUsers = [
+      {'uid': uid, 'username': userDoc.data()?['username'] ?? 'ฉัน'}
+    ];
+
+    for (var mUid in monitoredList) {
+      if (mUid is String) {
+        final mDoc = await _db.collection('users').doc(mUid).get();
+        if (mDoc.exists) {
+           targetUsers.add({'uid': mUid, 'username': mDoc.data()?['username'] ?? 'ญาติ'});
+        }
+      }
+    }
+
+    List<Map<String, dynamic>> groupedLogs = [];
+
+    // ดึง logs ของทีละคน
+    for (var target in targetUsers) {
+      final targetUid = target['uid'];
+      final snapshot = await _db.collection('MedicationLogs')
+          .where('userId', isEqualTo: targetUid)
+          .get();
+
+      List<MedicationLog> logs = [];
+      for (var doc in snapshot.docs) {
+        final log = MedicationLog.fromMap(doc.data(), doc.id);
+        final actual = log.actualTimestamp ?? log.plannedTimestamp;
+        if (!actual.isBefore(startOfDay) && !actual.isAfter(endOfDay)) {
+          logs.add(log);
+        }
+      }
+
+      logs.sort((a, b) {
+        final aTime = a.actualTimestamp ?? a.plannedTimestamp;
+        final bTime = b.actualTimestamp ?? b.plannedTimestamp;
+        return bTime.compareTo(aTime);
+      });
+
+      // แอดเข้ากรุ๊ปแม้ตะไม่มีประวัติการทานยาก็ตาม จะได้แสดงให้เห็นว่ายังไม่มียา
+      groupedLogs.add({
+        'uid': targetUid,
+        'username': target['username'],
+        'logs': logs,
+      });
+    }
+
+    return groupedLogs;
+  }
+
   // WRITE: ตรวจและบันทึก 'missed' สำหรับยาที่ไม่ได้ทานในรอบที่ผ่านมาวันนี้
   Future<void> checkAndMarkMissedLogs() async {
     final uid = await _getUserId();
@@ -305,6 +367,8 @@ class DatabaseHelper {
       // บันทึก 'missed' สำหรับยาที่ยังไม่มี Log วันนี้
       final batch = _db.batch();
       bool hasMissed = false;
+      List<String> missedMedNames = [];
+
       for (var medDoc in medSnapshot.docs) {
         final medId = medDoc.id;
         final medName = medDoc.data()['medName'] as String? ?? '';
@@ -321,9 +385,30 @@ class DatabaseHelper {
             status: 'missed',
           ).toMap());
           hasMissed = true;
+          missedMedNames.add(medName);
         }
       }
-      if (hasMissed) await batch.commit();
+      if (hasMissed) {
+        // ตรวจสอบว่ามีญาติที่ติดตามอยู่หรือไม่
+        final userDoc = await _db.collection('users').doc(uid).get();
+        List<dynamic> followerUids = userDoc.data()?['followerUids'] ?? [];
+        String patientName = userDoc.data()?['username'] ?? 'ผู้ป่วย';
+
+        if (followerUids.isNotEmpty) {
+           final alertRef = _db.collection('MissedMedicationAlerts').doc();
+           batch.set(alertRef, {
+             'patientUid': uid,
+             'patientName': patientName,
+             'relativeUids': followerUids,
+             'scheduleId': scheduleId,
+             'medNames': missedMedNames.join(', '),
+             'plannedTime': plannedTime,
+             'status': 'pending',
+             'createdAt': FieldValue.serverTimestamp(),
+           });
+        }
+        await batch.commit();
+      }
     }
   }
 }
