@@ -51,19 +51,19 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyDsK8BNXNSnNYGbNWrj70BbUX4AU-sg4U0',
-    appId: '1:460180747638:android:9c100136d30710b33d3657',
-    messagingSenderId: '460180747638',
-    projectId: 'flutter-notification-f1eea',
-    storageBucket: 'flutter-notification-f1eea.firebasestorage.app',
+    apiKey: 'AIzaSyBN8uopJSLkVgTEGfU83VsIA0ZE62v6u6A',
+    appId: '1:280296312674:android:83da9fe19b005f6c1ea63b',
+    messagingSenderId: '280296312674',
+    projectId: 'helpmeflutter-e03a8',
+    storageBucket: 'helpmeflutter-e03a8.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyAIRCRZ5FFSHFwBsCk4YUxviy6s13nu0AI',
-    appId: '1:460180747638:ios:2412748b3a178b023d3657',
-    messagingSenderId: '460180747638',
-    projectId: 'flutter-notification-f1eea',
-    storageBucket: 'flutter-notification-f1eea.firebasestorage.app',
+    apiKey: 'AIzaSyAsoWCvbXhxLFysyLIlwuBjfjwSmVBQ_no',
+    appId: '1:280296312674:ios:c2ac688d0ffed9101ea63b',
+    messagingSenderId: '280296312674',
+    projectId: 'helpmeflutter-e03a8',
+    storageBucket: 'helpmeflutter-e03a8.firebasestorage.app',
     iosBundleId: 'com.suppa.notificationapp',
   );
 

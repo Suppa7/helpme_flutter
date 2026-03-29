@@ -1,13 +1,32 @@
 {
   "project_info": {
-    "project_number": "460180747638",
-    "project_id": "flutter-notification-f1eea",
-    "storage_bucket": "flutter-notification-f1eea.firebasestorage.app"
+    "project_number": "280296312674",
+    "project_id": "helpmeflutter-e03a8",
+    "storage_bucket": "helpmeflutter-e03a8.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:460180747638:android:9c100136d30710b33d3657",
+        "mobilesdk_app_id": "1:280296312674:android:97eb748296869ff31ea63b",
+        "android_client_info": {
+          "package_name": "com.helpme.newappname"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBN8uopJSLkVgTEGfU83VsIA0ZE62v6u6A"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:280296312674:android:83da9fe19b005f6c1ea63b",
         "android_client_info": {
           "package_name": "com.suppa.notificationapp"
         }
@@ -15,7 +34,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyDsK8BNXNSnNYGbNWrj70BbUX4AU-sg4U0"
+          "current_key": "AIzaSyBN8uopJSLkVgTEGfU83VsIA0ZE62v6u6A"
         }
       ],
       "services": {
