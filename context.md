@@ -3,51 +3,54 @@
 ## 1. ข้อมูลทั่วไป
 - **ชื่อโปรเจกต์:** test (แอปพลิเคชันเตือนการทานยา)
 - **ประเภท:** Flutter Application
-- **จุดประสงค์:** เป็นแอปพลิเคชันสำหรับผู้ป่วยและญาติ(ผู้ดูแล) เพื่อช่วยแจ้งเตือนการทานยา มีระบบติดตามและบันทึกประวัติการทานยา
+- **จุดประสงค์:** เป็นแอปพลิเคชันสำหรับผู้ป่วยและญาติ(ผู้ดูแล) เพื่อช่วยแจ้งเตือนการทานยา มีระบบติดตาม เลื่อนเวลา(Snooze) และบันทึกประวัติการทานยาแบบ Real-time
 - **ภาษาที่รองรับ (Localization):** รองรับภาษาอังกฤษ (en_US) และภาษาไทย (th_TH) ควบคุมผ่านแพ็กเกจ `flutter_localizations`
 
 ## 2. โครงสร้างและไลบรารีที่สำคัญ (Dependencies)
 อ้างอิงจากไฟล์ `pubspec.yaml` มีแพ็กเกจหลักๆ ดังนี้:
-- **`cloud_firestore` & `firebase_core`**: จัดการฐานข้อมูลแบบ NoSQL บน **Cloud Firestore**
-- **`firebase_messaging`**: รองรับ Push Notification ผ่าน FCM
-- **`shared_preferences`**: ใช้เก็บข้อมูลเบสิกของผู้ใช้ในเครื่อง (เช่น Cache ของ `uid` และ `userName`) เพื่อข้ามหน้าล็อกอินไม่ต้องกรอกใหม่ทุกครั้ง
-- **`flutter_local_notifications` & `timezone`**: ทำหน้าที่สร้างกลไกระบบแจ้งเตือน (Local Notification / Alarm) ภายในอุปกรณ์
-- **`image_picker`**: ใช้สำหรับแนบหรือถ่ายรูปภาพยา
+- **`cloud_firestore` & `firebase_core`**: จัดการฐานข้อมูลแบบ NoSQL บน **Cloud Firestore** พร้อมระบบ Listener แบบ Real-time
+- **`firebase_messaging`**: รองรับ Push Notification (FCM)
+- **`shared_preferences`**: ใช้เก็บข้อมูลผู้ใช้ในเครื่อง (`uid`, `userName`) เพื่อการเชื่อมต่อและการล็อกอินอัตโนมัติ
+- **`flutter_local_notifications` & `timezone`**: สร้างระบบแจ้งเตือน (Local Notification / Alarm) ภายในอุปกรณ์
+- **`image_picker`**: ใช้สำหรับตลึงภาพยา พร้อมระบบ Preview รูปภาพขยายแบบ Interactive
 - **`flutter_localizations`**: รองรับภาษาไทยใน DatePicker หรือ Widget พื้นฐานต่างๆ 
 
 ## 3. โครงสร้างโค้ด (Project Structure)
-- **`main.dart`**: จุดเริ่มต้นของแอปพลิเคชัน Initialize Firebase, ตั้งค่า Localization, ควบคุม Routing (`/login`, `/register`, `/home`, `/med_detail`) และดูแลสเตตัสในหน้าจัดการยาเมื่อเปิดจากการแจ้งเตือน (`MedicationDetailScreen`)
+- **`main.dart`**: จุดเริ่มต้นของแอปพลิเคชัน Initialize Firebase, ตั้งค่า Localization, ควบคุม Routing (`/login`, `/register`, `/home`, `/med_detail`, `/alert_detail`)
 - **`firebase_options.dart`**: ไฟล์ตั้งค่า Firebase สำหรับแต่ละ Platform 
-- **`lib/models/`**: โฟลเดอร์เก็บคลาสโครงสร้างข้อมูล (Data Models) เช่น `medication.dart`
-- **`lib/screens/`**: หน้า UI แอปพลิเคชัน เช่น `home_screen.dart`
+- **`lib/models/`**: โฟลเดอร์เก็บคลาสโครงสร้างข้อมูล (Data Models) เช่น `medication.dart`, `medication_log.dart`
+- **`lib/screens/`**: หน้า UI แอปพลิเคชัน เช่น `home_screen.dart`, หน้า `MedicationDetailScreen` (กดรับลดยาจากตารางกลุ่ม), หน้า `AlertDetailScreen` (หน้าสำหรับญาติในการกดยืนยันรับทราบกรณีผู้ป่วยขาดยา)
 - **`lib/services/`**: ตัวจัดการ Service ต่างๆ ของแอป เช่น 
-  - `database_helper.dart` (รับผิดชอบ CRUD คุยกับ Firestore) 
-  - `notification_service.dart` (รับผิดชอบการตั้งปลุก, Snooze, ยกเลิกคิว)
+  - `database_helper.dart` (รับผิดชอบ CRUD คุยกับ Firestore มีการ Query เชิงลึก) 
+  - `notification_service.dart` (รับผิดชอบการตั้งปลุก แจ้งเตือนกลุ่ม และฟังก์ชัน เลื่อนเวลา Snooze)
 
-## 4. โครงสร้างข้อมูลใน Firestore (ปัจจุบันแบบ Relational-like)
-ระบบได้ยกเครื่องโครงสร้างจากรูปแบบเดิมมาเป็นแบบ Relational-like เพื่อรองรับระบบญาติและการตั้งเวลาให้ยืดหยุ่น (มีใช้งานจริงแล้ว):
-- **`users`**: เก็บข้อมูลผู้ใช้ (uid, phoneNumber, password, userCode, monitoredUserUids, followerUids, fcmToken)
-- **`Schedules`**: เก็บรายละเอียดกำหนดการ/ช่วงเวลาทานยา (scheduleId, userId, meal, time, instruction, isActive)
-- **`Medications`**: เก็บระเบียนตัวยาแต่ละชนิด (medId, scheduleId, medName, amount, unit, imageUrl, days) โดยผูกกับ Schedules
-- **`MedicationLogs`**: เป็น Transaction Log บันทึกประวัติการทานยารายครั้งอย่างละเอียด (plannedTimestamp, actualTimestamp, status: taken/skipped/missed, snoozeCount)
+## 4. โครงสร้างข้อมูลใน Firestore (แบบ Relational-like)
+ระบบเพิ่งอัปเกรดโครงสร้างฐานข้อมูลมารองรับญาติและการแจ้งเตือนรายครั้ง:
+- **`users`**: เก็บข้อมูลผู้ใช้และรหัสเชื่อมต่อญาติ (uid, phoneNumber, password, userCode, monitoredUserUids, followerUids, fcmToken)
+- **`Schedules`**: เก็บรายละเอียดกำหนดการทานยา (scheduleId, userId, meal, time, instruction, isActive)
+- **`Medications`**: เก็บชนิดยา (medId, scheduleId, medName, amount, unit, imageUrl, days) ผูกเวลา
+- **`MedicationLogs`**: บันทึกประวัติการทานยา Transaction Log (plannedTimestamp, actualTimestamp, status: taken/skipped/missed, snoozeCount)
+- **`MissedMedicationAlerts`**: (หน้าใหม่) แจ้งเตือนผู้ป่วยลืมทานยาสำหรับระบบติดตามของญาติ (แบบ Real-time snapshot listener)
 
 ## 5. ลำดับการทำงานหลัก (Main Application Flow)
-1. **การลงทะเบียน/ล็อกอิน (Authentication via Phone):** แอปพลิเคชันตรวจสอบตัวแปร `uid` ใน `SharedPreferences` หากไม่พบ จะพาไปเข้าสู่ระบบ `/login` หรือสมัครสมาชิก `/register` โดยใช้เบอร์โทรศัพท์เป็นหลักในการจำแนกผู้ใช้
-2. **หน้าจอหลัก (Home Screen):** เมื่อมี UID แล้ว แอปจะส่งไป `/home` เพื่อโหลดข้อมูล Schedule และ Medication ของผู้ใช้นั้นมาแสดงผล
-3. **การเพิ่มยาและตั้งเวลา:** ผู้ใช้สร้าง Schedule ใหม่ (เลือกเวลา และวันเช่น Everyday หรือบางวัน) จากนั้นก็เพิ่ม Medication เข้าไปผูกที่เวลานั้น ระบบจะสั่งสร้าง Local Notification ตามเงื่อนไขวันที่เลือก
-4. **แจ้งเตือนและแอคชันควบคุม (Grouped Noti & Snooze):**
-   - เมื่อถึงเวลา แจ้งเตือนจะดังขึ้น (หากปล่อยทิ้งไว้ จะเตือนซ้ำทุกๆ 1 นาที เป็นจำนวน 2 ครั้ง)
-   - เมื่อกดที่ Notification จะเปิดหน้า `/med_detail` ขึ้นมา แสดงรายการยา "**ทั้งหมด**" ที่กำหนดให้ต้องทานในรอบเวลานั้น
-   - ผู้ใช้มีทางเลือก 3 อย่าง คือ:
-     - กดยืนยันทานยา "**รายตัว**" 
-     - กดยืนยัน "**รับประทานยาทั้งหมด**" ทีเดียว
-     - กดปุ่ม "**เลื่อนเวลา (Snooze)**" ให้เตือนใหม่ในอีก 15 นาที
-   - เมื่อยืนยันทานยาตัวใดไปแล้ว ระบบจะจัดการลดจำนวนคงเหลือของยา (amount) ให้ใน Firestore ทันที
+1. **การเข้าสู่ระบบ:** เช็ค `uid` ใน `SharedPreferences` เพื่อไปยัง `/home` สลับกับการสมัครแบบเบอร์โทรศัพท์และรหัส `userCode`
+2. **จัดการยาและตาราง:** ผู้ใช้สร้าง Schedule เวลา และเพิ่ม Medication ผูกเวลา
+3. **แจ้งเตือนกลุ่มและการยืนยัน (Grouped System):**
+   - เมื่อถึงเวลา Local Notification จะเด้งขึ้นรวมเป็นก้อน หากทิ้งไว้จะดังซ้ำ 2 รอบ
+   - แตะที่แจ้งเตือนเปิดไปที่หน้า (`/med_detail`) สามารถทานรายตัว, ทานทั้งหมด, เรียกดูรูปยา หรือเลื่อน 15 นาที (Snooze)
+   - เมื่อยืนยันทานยา ระบบจะตัดยอดยาคงเหลือ (`amount`) และบันทึกสถานะ `taken` เข้า Logs
+4. **ระบบรับทราบสถานะญาติ (Relative Monitoring):** 
+   - ญาติสามารถใส่รหัสติดตามตัว (`userCode`) ในหน้า Home 
+   - เมื่อผู้ป่วยลืมทานยาถึงเวลาที่กำหนด (missed) ข้อมูลจะส่งเข้าคอลเลกชัน `MissedMedicationAlerts` 
+   - ระบบของญาติใช้วิธีดักจับ Snapshot Listener แจ้งญาติให้สามารถกดรับทราบ (`/alert_detail`) เข้าไปอัปเดตสถานะการตามจิกผู้ป่วยบน Firestore ได้อย่างทันทีทันใด
 
-## 6. สิ่งที่กำลังพัฒนาต่อ (Future Plans / WIP)
-(อ้างอิงจากเอกสาร `Planning.md`)
-- การส่งแจ้งเตือนข้ามเครื่องให้ญาติผ่านแพ็กเกจ **Firebase Cloud Messaging (FCM)** ทันทีที่ผู้ป่วยละเลยการทานยา (ปัจจุบันระบบเชื่อมต่อฐานข้อมูลญาติสำเร็จแล้ว แต่ยังไม่ได้ทำระบบส่ง Push Notification)
-- ปรับปรุง UI และ UX ให้ตอบโจทย์ผู้ใช้งานมากขึ้น
+## 6. สิ่งที่เพิ่งอัปเดต (Recent Updates)
+- ปรับปรุงวิธีการแจ้งเตือนญาติมาเป็นการดักจับ Snapshot จาก `MissedMedicationAlerts` ด้วย Real-time Listener แก้ปัญหาความน่าเชื่อถือ
+- ใช้งานระบบ Logging Status ใหม่ทั้งหมด (`snoozed`, `taken`, `missed`)
+- อัปเกรด UI ด้วยระบบโชว์รูปถ่ายยาขยาย และ Notification Group List
+- แก้ไข Analyzer Warnings เก็บกวาดแจ้งเตือนเกี่ยวกับการใช้ mounted ข้ามบริบท
 
-## 7. ประเด็นที่ควรระวัง (Known Issues / Watchouts)
-- เคยพบปัญหาแอปพลิเคชันค้าง (Hang) หรือบิลด์ (Build) ช้ามากผิดปกติในบางสภาพแวดล้อม ภายหลังจากมีการเพื่ม Support แพ็กเกจภาษาไทย (Thai Localization)
+## 7. สิ่งที่กำลังพัฒนาต่อ (Future Plans / WIP)
+- ปรับปรุง UI และ UX ให้สวยงาม แข็งแรงมากยิ่งขึ้นในขั้นตอนสู่ Production
+
+## 8. คำสั่งที่ผ่าน terminal ให้ list ไว้ให้ฉันรันด้วยตนเอง

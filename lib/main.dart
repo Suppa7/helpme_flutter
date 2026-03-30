@@ -39,7 +39,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'แอพเตือนกินยา',
-      theme: ThemeData(primarySwatch: Colors.blue),
+      theme: ThemeData(primarySwatch: Colors.green),
       navigatorKey:
           navigatorKey, // 🌟 สำคัญ: เพื่อให้ Notification เปลี่ยนหน้าได้
       initialRoute: initialRoute,
@@ -95,9 +95,16 @@ class _MedicationDetailScreenState extends State<MedicationDetailScreen> {
 
   Future<void> _loadMedications(String schedId) async {
     final allMeds = await DatabaseHelper.instance.getMedicationsBySchedule(schedId);
+    final logs = await DatabaseHelper.instance.getTodayMedicationLogs();
     
-    // กรองเอาเฉพาะยาที่ amount > 0 มาแสดงให้กดทาน
-    final meds = allMeds.where((m) => m.amount > 0).toList();
+    // ยาที่เพิ่งกินไปใน schedule นี้วันนี้
+    final takenTodayInThisSchedule = logs
+        .where((log) => log.scheduleId == schedId && log.status == 'taken')
+        .map((log) => log.medId)
+        .toSet();
+
+    // กรองเอาเฉพาะยาที่ amount > 0 และยังไม่ได้ทานในรอบวันนี้
+    final meds = allMeds.where((m) => m.amount > 0 && !takenTodayInThisSchedule.contains(m.medId)).toList();
     
     // Fetch target Schedule for its time
     final schedDoc = await FirebaseFirestore.instance.collection('Schedules').doc(schedId).get();
@@ -118,18 +125,19 @@ class _MedicationDetailScreenState extends State<MedicationDetailScreen> {
     });
   }
 
-  // กินเฉพาะบางตัว
-  Future<void> _takeIndividual(Medication med) async {
-    if (_takenMedIds.contains(med.medId)) return;
+  void _toggleMedication(String medId) {
+    setState(() {
+      if (_takenMedIds.contains(medId)) {
+        _takenMedIds.remove(medId);
+      } else {
+        _takenMedIds.add(medId);
+      }
+    });
+  }
 
-    if (med.amount >= 1) {
-      med.amount -= 1;
-    } else {
-      med.amount = 0;
-    }
-    await DatabaseHelper.instance.updateMedication(med);
+  Future<void> _processTakenMeds(Set<String> medIdsToProcess) async {
+    if (medIdsToProcess.isEmpty) return;
 
-    // 🌟 สร้าง Log
     final now = DateTime.now();
     final parts = _scheduleTime.split(':');
     DateTime plannedTime = now;
@@ -138,67 +146,44 @@ class _MedicationDetailScreenState extends State<MedicationDetailScreen> {
       int m = int.tryParse(parts[1]) ?? now.minute;
       plannedTime = DateTime(now.year, now.month, now.day, h, m);
     }
-    
-    final log = MedicationLog(
-      userId: '', // เดี๋ยว Helper จัดการให้
-      medId: med.medId ?? '',
-      scheduleId: _scheduleId,
-      medName: med.medName,
-      plannedTimestamp: plannedTime,
-      actualTimestamp: now,
-      status: 'taken',
-      snoozeCount: _snoozeCount,
-    );
-    await DatabaseHelper.instance.insertMedicationLog(log);
 
-    setState(() {
-      _takenMedIds.add(med.medId!);
-    });
+    for (var medId in medIdsToProcess) {
+      final med = _meds.firstWhere((m) => m.medId == medId);
+      if (med.amount >= 1) {
+        med.amount -= 1;
+      } else {
+        med.amount = 0;
+      }
+      await DatabaseHelper.instance.updateMedication(med);
 
-    // ถ้ากดครบทุกตัวแล้ว
-    if (_takenMedIds.length >= _meds.length) {
-      await _confirmAllTaken(deductAmount: false); // หักไปแล้วทีละตัว
+      final log = MedicationLog(
+        userId: '',
+        medId: med.medId ?? '',
+        scheduleId: _scheduleId,
+        medName: med.medName,
+        plannedTimestamp: plannedTime,
+        actualTimestamp: now,
+        status: 'taken',
+        snoozeCount: _snoozeCount,
+      );
+      await DatabaseHelper.instance.insertMedicationLog(log);
     }
   }
 
-  // กินทั้งหมดรวดเดียว
-  Future<void> _confirmAllTaken({bool deductAmount = true}) async {
-    // หักจำนวน
-    if (deductAmount) {
-      final now = DateTime.now();
-      final parts = _scheduleTime.split(':');
-      DateTime plannedTime = now;
-      if (parts.length == 2) {
-        int h = int.tryParse(parts[0]) ?? now.hour;
-        int m = int.tryParse(parts[1]) ?? now.minute;
-        plannedTime = DateTime(now.year, now.month, now.day, h, m);
-      }
-
-      for (var med in _meds) {
-        if (!_takenMedIds.contains(med.medId)) {
-          if (med.amount >= 1) {
-            med.amount -= 1;
-          } else {
-            med.amount = 0;
-          }
-          await DatabaseHelper.instance.updateMedication(med);
-
-          final log = MedicationLog(
-            userId: '',
-            medId: med.medId ?? '',
-            scheduleId: _scheduleId,
-            medName: med.medName,
-            plannedTimestamp: plannedTime,
-            actualTimestamp: now,
-            status: 'taken',
-            snoozeCount: _snoozeCount,
-          );
-          await DatabaseHelper.instance.insertMedicationLog(log);
-        }
-      }
+  // ยืนยันเฉพาะยาที่เลือก หรือ ยืนยันทั้งหมด
+  Future<void> _confirmAllTaken() async {
+    Set<String> medsToTake = {};
+    if (_takenMedIds.isEmpty) {
+      // ถ้าไม่ได้เลือกรายตัว ให้หมายถึงกินทั้งหมด
+      medsToTake = _meds.map((m) => m.medId!).toSet();
+    } else {
+      // ถ้าเลือกบางตัว ให้ประมวลผลเฉพาะตัวที่เลือก
+      medsToTake = _takenMedIds;
     }
     
-    // ยกเลิกข้อความแจ้งเตือนทั้งหมด
+    await _processTakenMeds(medsToTake);
+    
+    // ยกเลิกข้อความแจ้งเตือนทั้งหมดในรอบเวลานี้
     await NotificationService().cancelAllAlertsForSchedule(_scheduleId);
 
     if (mounted) {
@@ -207,10 +192,14 @@ class _MedicationDetailScreenState extends State<MedicationDetailScreen> {
   }
 
   Future<void> _snoozeAlert() async {
+    // 🌟 ถ้ามีการติ๊กถูกยาบางตัวไว้ โพรเซสตัวที่ถูกกินไปแล้วก่อน
+    if (_takenMedIds.isNotEmpty) {
+      await _processTakenMeds(_takenMedIds);
+    }
+
     SharedPreferences prefs = await SharedPreferences.getInstance();
     String userName = prefs.getString('userName') ?? 'ผู้ใช้งาน';
 
-    // นับจำนวน Snooze ก่อน ค่อย navigate ออกไป
     setState(() => _snoozeCount++);
 
     await NotificationService().snoozeScheduleAlerts(
@@ -220,7 +209,7 @@ class _MedicationDetailScreenState extends State<MedicationDetailScreen> {
     );
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('เลื่อนเวลาปลุกไปอีก 15 นาที (Snooze ครั้งที่ $_snoozeCount)')),
+        SnackBar(content: Text('บันทึกยาที่ทานแล้ว และเลื่อนเวลาปลุกตัวที่เหลืออีก 15 นาที')),
       );
       Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
     }
@@ -239,10 +228,10 @@ class _MedicationDetailScreenState extends State<MedicationDetailScreen> {
     }
 
     return Scaffold(
-      backgroundColor: Colors.blue.shade50,
+      backgroundColor: Colors.green.shade50,
       appBar: AppBar(
         title: Text('รอบเวลา ${_scheduleTime.isNotEmpty ? _scheduleTime : "ไม่ระบุ"}'),
-        backgroundColor: Colors.blue.shade800,
+        backgroundColor: Colors.green.shade800,
         foregroundColor: Colors.white,
       ),
       body: Column(
@@ -250,10 +239,10 @@ class _MedicationDetailScreenState extends State<MedicationDetailScreen> {
           Container(
             padding: const EdgeInsets.all(16),
             width: double.infinity,
-            color: Colors.blue.shade100,
+            color: Colors.green.shade100,
             child: Text(
               'เลือกทานเฉพาะยา หรือกดยืนยันทั้งหมดด้านล่าง',
-              style: TextStyle(fontSize: 16, color: Colors.blue.shade900, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: 16, color: Colors.green.shade900, fontWeight: FontWeight.bold),
               textAlign: TextAlign.center,
             ),
           ),
@@ -320,7 +309,7 @@ class _MedicationDetailScreenState extends State<MedicationDetailScreen> {
                             ),
                           )
                         else
-                          Icon(Icons.medication, size: 60, color: Colors.blue.shade300),
+                          Icon(Icons.medication, size: 60, color: Colors.green.shade300),
                         const SizedBox(width: 15),
                         Expanded(
                           child: Column(
@@ -344,12 +333,20 @@ class _MedicationDetailScreenState extends State<MedicationDetailScreen> {
                           ),
                         ),
                         isTaken
-                            ? const Icon(Icons.check_circle, color: Colors.green, size: 32)
-                            : OutlinedButton(
-                                onPressed: () => _takeIndividual(med),
+                            ? OutlinedButton.icon(
+                                onPressed: () => _toggleMedication(med.medId!),
+                                icon: const Icon(Icons.check_circle, color: Colors.green),
+                                label: const Text('ยกเลิก'),
                                 style: OutlinedButton.styleFrom(
-                                  foregroundColor: Colors.blue,
-                                  side: const BorderSide(color: Colors.blue),
+                                  foregroundColor: Colors.green,
+                                  side: const BorderSide(color: Colors.green),
+                                ),
+                              )
+                            : OutlinedButton(
+                                onPressed: () => _toggleMedication(med.medId!),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.grey,
+                                  side: const BorderSide(color: Colors.grey),
                                 ),
                                 child: const Text('ทานยานี้'),
                               ),
@@ -367,9 +364,11 @@ class _MedicationDetailScreenState extends State<MedicationDetailScreen> {
                 ElevatedButton.icon(
                   onPressed: () => _confirmAllTaken(),
                   icon: const Icon(Icons.checklist, size: 28),
-                  label: const Text(
-                    'รับประทานยาทั้งหมด',
-                    style: TextStyle(fontSize: 20),
+                  label: Text(
+                    _takenMedIds.isEmpty 
+                        ? 'รับประทานยาทั้งหมด' 
+                        : (_takenMedIds.length == _meds.length ? 'ยืนยันการทานยาทั้งหมด' : 'ยืนยันทานเฉพาะยาที่เลือก'),
+                    style: const TextStyle(fontSize: 20),
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,
@@ -473,36 +472,102 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('เข้าสู่ระบบ')),
-      body: Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            TextField(
-              controller: _phoneController,
-              decoration: const InputDecoration(labelText: 'เบอร์โทรศัพท์', border: OutlineInputBorder()),
-              keyboardType: TextInputType.phone,
-            ),
-            const SizedBox(height: 15),
-            TextField(
-              controller: _passwordController,
-              decoration: const InputDecoration(labelText: 'รหัสผ่าน', border: OutlineInputBorder()),
-              obscureText: true,
-            ),
-            const SizedBox(height: 20),
-            _isLoading
-                ? const CircularProgressIndicator()
-                : ElevatedButton(
-                    onPressed: _login,
-                    style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50)),
-                    child: const Text('เข้าสู่ระบบ', style: TextStyle(fontSize: 18)),
+      backgroundColor: Colors.green.shade50,
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Logo
+              Image.asset('assets/images/logo_helpme.png', height: 120),
+              const SizedBox(height: 20),
+              Text(
+                'ยินดีต้อนรับ',
+                style: TextStyle(
+                  fontSize: 28, 
+                  fontWeight: FontWeight.bold, 
+                  color: Colors.green.shade800
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'เข้าสู่ระบบเพื่อจัดการเวลาทานยาของคุณ',
+                style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
+              ),
+              const SizedBox(height: 30),
+              
+              // Auth Card
+              Card(
+                elevation: 6,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Column(
+                    children: [
+                      TextField(
+                        controller: _phoneController,
+                        decoration: InputDecoration(
+                          labelText: 'เบอร์โทรศัพท์',
+                          prefixIcon: const Icon(Icons.phone, color: Colors.green),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(15), 
+                            borderSide: const BorderSide(color: Colors.green, width: 2)
+                          ),
+                        ),
+                        keyboardType: TextInputType.phone,
+                      ),
+                      const SizedBox(height: 15),
+                      TextField(
+                        controller: _passwordController,
+                        decoration: InputDecoration(
+                          labelText: 'รหัสผ่าน',
+                          prefixIcon: const Icon(Icons.lock, color: Colors.green),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(15), 
+                            borderSide: const BorderSide(color: Colors.green, width: 2)
+                          ),
+                        ),
+                        obscureText: true,
+                      ),
+                      const SizedBox(height: 25),
+                      _isLoading
+                          ? const CircularProgressIndicator()
+                          : ElevatedButton(
+                              onPressed: _login,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green,
+                                foregroundColor: Colors.white,
+                                minimumSize: const Size(double.infinity, 55),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                                elevation: 3,
+                              ),
+                              child: const Text('เข้าสู่ระบบ', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                            ),
+                    ],
                   ),
-            TextButton(
-              onPressed: () => Navigator.pushReplacementNamed(context, '/register'),
-              child: const Text('ยังไม่มีบัญชี? สมัครสมาชิก'),
-            )
-          ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              TextButton(
+                onPressed: () => Navigator.pushReplacementNamed(context, '/register'),
+                child: RichText(
+                  text: TextSpan(
+                    text: 'ยังไม่มีบัญชี? ',
+                    style: const TextStyle(color: Colors.grey, fontSize: 16),
+                    children: [
+                      TextSpan(
+                        text: 'สมัครสมาชิก',
+                        style: TextStyle(color: Colors.green.shade800, fontWeight: FontWeight.bold),
+                      )
+                    ],
+                  ),
+                ),
+              )
+            ],
+          ),
         ),
       ),
     );
@@ -597,29 +662,111 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('สมัครสมาชิกใหม่')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          children: [
-            TextField(controller: _phoneController, decoration: const InputDecoration(labelText: 'เบอร์โทรศัพท์', border: OutlineInputBorder()), keyboardType: TextInputType.phone),
-            const SizedBox(height: 15),
-            TextField(controller: _passwordController, decoration: const InputDecoration(labelText: 'รหัสผ่าน', border: OutlineInputBorder()), obscureText: true),
-            const SizedBox(height: 15),
-            TextField(controller: _nameController, decoration: const InputDecoration(labelText: 'ชื่อ-นามสกุล', border: OutlineInputBorder())),
-            const SizedBox(height: 25),
-            _isLoading
-                ? const CircularProgressIndicator()
-                : ElevatedButton(
-                    onPressed: _register,
-                    style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50)),
-                    child: const Text('ลงทะเบียน', style: TextStyle(fontSize: 18)),
+      backgroundColor: Colors.green.shade50,
+      appBar: AppBar(
+        title: const Text(''), // ไม่แสดง title เพื่อให้ layout สะอาดตา
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        foregroundColor: Colors.green.shade800,
+      ),
+      extendBodyBehindAppBar: true,
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 20.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Image.asset('assets/images/logo_helpme.png', height: 100),
+              const SizedBox(height: 15),
+              Text(
+                'สร้างบัญชีผู้ใช้ใหม่',
+                style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.green.shade800),
+              ),
+              const SizedBox(height: 25),
+              
+              Card(
+                elevation: 6,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Column(
+                    children: [
+                      TextField(
+                        controller: _nameController, 
+                        decoration: InputDecoration(
+                          labelText: 'ชื่อ-นามสกุล', 
+                          prefixIcon: const Icon(Icons.person, color: Colors.green),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(15), 
+                            borderSide: const BorderSide(color: Colors.green, width: 2)
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 15),
+                      TextField(
+                        controller: _phoneController, 
+                        decoration: InputDecoration(
+                          labelText: 'เบอร์โทรศัพท์', 
+                          prefixIcon: const Icon(Icons.phone, color: Colors.green),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(15), 
+                            borderSide: const BorderSide(color: Colors.green, width: 2)
+                          ),
+                        ), 
+                        keyboardType: TextInputType.phone
+                      ),
+                      const SizedBox(height: 15),
+                      TextField(
+                        controller: _passwordController, 
+                        decoration: InputDecoration(
+                          labelText: 'รหัสผ่าน', 
+                          prefixIcon: const Icon(Icons.lock, color: Colors.green),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(15), 
+                            borderSide: const BorderSide(color: Colors.green, width: 2)
+                          ),
+                        ), 
+                        obscureText: true
+                      ),
+                      const SizedBox(height: 25),
+                      _isLoading
+                          ? const CircularProgressIndicator()
+                          : ElevatedButton(
+                              onPressed: _register,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green,
+                                foregroundColor: Colors.white,
+                                minimumSize: const Size(double.infinity, 55),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                                elevation: 3,
+                              ),
+                              child: const Text('ลงทะเบียน', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                            ),
+                    ],
                   ),
-            TextButton(
-              onPressed: () => Navigator.pushReplacementNamed(context, '/login'),
-              child: const Text('มีบัญชีอยู่แล้ว? เข้าสู่ระบบ'),
-            )
-          ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              TextButton(
+                onPressed: () => Navigator.pushReplacementNamed(context, '/login'),
+                child: RichText(
+                  text: TextSpan(
+                    text: 'มีบัญชีอยู่แล้ว? ',
+                    style: const TextStyle(color: Colors.grey, fontSize: 16),
+                    children: [
+                      TextSpan(
+                        text: 'เข้าสู่ระบบ',
+                        style: TextStyle(color: Colors.green.shade800, fontWeight: FontWeight.bold),
+                      )
+                    ],
+                  ),
+                ),
+              )
+            ],
+          ),
         ),
       ),
     );

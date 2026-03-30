@@ -104,12 +104,12 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
               ),
               title: const Row(
                 children: [
-                  Icon(Icons.medical_information, color: Colors.blue, size: 30),
+                  Icon(Icons.medical_information, color: Colors.green, size: 30),
                   SizedBox(width: 10),
                   Text(
                     'เพิ่มยา',
                     style: TextStyle(
-                      color: Colors.blue,
+                      color: Colors.green,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -138,9 +138,9 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                         height: 120,
                         width: double.infinity,
                         decoration: BoxDecoration(
-                          color: Colors.blue.shade50,
+                          color: Colors.green.shade50,
                           borderRadius: BorderRadius.circular(15),
-                          border: Border.all(color: Colors.blue.shade200),
+                          border: Border.all(color: Colors.green.shade200),
                         ),
                         child: selectedImagePath == null
                             ? const Column(
@@ -149,11 +149,11 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                                   Icon(
                                     Icons.camera_alt,
                                     size: 40,
-                                    color: Colors.blue,
+                                    color: Colors.green,
                                   ),
                                   Text(
                                     'ถ่ายรูปยา',
-                                    style: TextStyle(color: Colors.blue),
+                                    style: TextStyle(color: Colors.green),
                                   ),
                                 ],
                               )
@@ -255,8 +255,8 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                                 }
                               });
                             },
-                            selectedColor: Colors.blue.shade100,
-                            checkmarkColor: Colors.blue,
+                            selectedColor: Colors.green.shade100,
+                            checkmarkColor: Colors.green,
                           );
                         }).toList(),
                       ),
@@ -274,12 +274,22 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                 ),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue,
+                    backgroundColor: Colors.green,
                     foregroundColor: Colors.white,
                   ),
                   onPressed: () async {
                     if (nameController.text.isNotEmpty &&
                         amountController.text.isNotEmpty) {
+                      
+                      final newName = nameController.text.trim();
+                      final isDuplicate = _medications.any((m) => m.medName.trim().toLowerCase() == newName.toLowerCase());
+                      if (isDuplicate) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('มียาชื่อ "$newName" ในรอบเวลานี้อยู่แล้ว กรุณาแก้ไขรายการเดิมแทน')),
+                        );
+                        return;
+                      }
+
                       final newMed = Medication(
                         scheduleId: widget.schedule.scheduleId!,
                         userId: widget.schedule.userId,
@@ -383,9 +393,9 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                         height: 120,
                         width: double.infinity,
                         decoration: BoxDecoration(
-                          color: Colors.blue.shade50,
+                          color: Colors.green.shade50,
                           borderRadius: BorderRadius.circular(15),
-                          border: Border.all(color: Colors.blue.shade200),
+                          border: Border.all(color: Colors.green.shade200),
                         ),
                         child: selectedImagePath == null
                             ? const Column(
@@ -394,11 +404,11 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                                   Icon(
                                     Icons.camera_alt,
                                     size: 40,
-                                    color: Colors.blue,
+                                    color: Colors.green,
                                   ),
                                   Text(
                                     'ถ่ายรูปยาใหม่',
-                                    style: TextStyle(color: Colors.blue),
+                                    style: TextStyle(color: Colors.green),
                                   ),
                                 ],
                               )
@@ -492,8 +502,8 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                                 }
                               });
                             },
-                            selectedColor: Colors.blue.shade100,
-                            checkmarkColor: Colors.blue,
+                            selectedColor: Colors.green.shade100,
+                            checkmarkColor: Colors.green,
                           );
                         }).toList(),
                       ),
@@ -508,14 +518,23 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                 ),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue,
+                    backgroundColor: Colors.green,
                     foregroundColor: Colors.white,
                   ),
                   onPressed: () async {
                     if (nameController.text.isNotEmpty &&
                         amountController.text.isNotEmpty) {
                       
-                      med.medName = nameController.text;
+                      final newName = nameController.text.trim();
+                      final isDuplicate = _medications.any((m) => m.medId != med.medId && m.medName.trim().toLowerCase() == newName.toLowerCase());
+                      if (isDuplicate) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('มียาชื่อ "$newName" ในรอบเวลานี้อยู่แล้ว ไม่สามารถใช้ชื่อซ้ำได้')),
+                        );
+                        return;
+                      }
+
+                      med.medName = newName;
                       med.amount = num.tryParse(amountController.text) ?? med.amount;
                       med.unit = selectedUnit;
                       med.imageUrl = selectedImagePath;
@@ -555,7 +574,7 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text('ยาสำหรับเวลา ${widget.schedule.time}'),
-        backgroundColor: Colors.blue.shade800,
+        backgroundColor: Colors.green.shade800,
         foregroundColor: Colors.white,
       ),
       body: Column(
@@ -591,7 +610,7 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                             Icon(
                               Icons.medication_outlined,
                               size: 80,
-                              color: Colors.blue.shade200,
+                              color: Colors.green.shade200,
                             ),
                             const SizedBox(height: 10),
                             const Text(
@@ -618,7 +637,7 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                             margin: const EdgeInsets.only(bottom: 12),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(15),
-                              side: BorderSide(color: Colors.blue.shade100, width: 1),
+                              side: BorderSide(color: Colors.green.shade100, width: 1),
                             ),
                             child: Padding(
                               padding: const EdgeInsets.all(12.0),
@@ -639,12 +658,12 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                                       width: 60,
                                       height: 60,
                                       decoration: BoxDecoration(
-                                        color: Colors.blue.shade50,
+                                        color: Colors.green.shade50,
                                         borderRadius: BorderRadius.circular(10),
                                       ),
                                       child: const Icon(
                                         Icons.medication,
-                                        color: Colors.blue,
+                                        color: Colors.green,
                                         size: 35,
                                       ),
                                     ),
