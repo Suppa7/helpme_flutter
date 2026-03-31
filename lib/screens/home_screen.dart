@@ -254,7 +254,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     DropdownButtonFormField<String>(
                       initialValue: selectedMeal,
-                      decoration: const InputDecoration(labelText: 'มื้ออาหาร', border: OutlineInputBorder()),
+                      decoration: InputDecoration(
+                        labelText: 'มื้ออาหาร',
+                        prefixIcon: const Icon(Icons.restaurant, color: Colors.green),
+                        filled: true,
+                        fillColor: Colors.green.shade50,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+                      ),
                       items: const [
                         DropdownMenuItem(value: 'morning', child: Text('เช้า')),
                         DropdownMenuItem(value: 'lunch', child: Text('กลางวัน')),
@@ -266,42 +272,62 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(height: 15),
                     DropdownButtonFormField<String>(
                       initialValue: selectedInstruction,
-                      decoration: const InputDecoration(labelText: 'เงื่อนไข', border: OutlineInputBorder()),
+                      decoration: InputDecoration(
+                        labelText: 'เงื่อนไขการทาน',
+                        prefixIcon: const Icon(Icons.info_outline, color: Colors.green),
+                        filled: true,
+                        fillColor: Colors.green.shade50,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+                      ),
                       items: const [
                         DropdownMenuItem(value: 'before_meal', child: Text('ก่อนอาหาร')),
                         DropdownMenuItem(value: 'after_meal', child: Text('หลังอาหาร')),
                       ],
                       onChanged: (val) => setDialogState(() => selectedInstruction = val!),
                     ),
-                    const SizedBox(height: 15),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'เวลา: ${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')} น.',
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
+                    const SizedBox(height: 20),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade50,
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.schedule, color: Colors.green),
+                              const SizedBox(width: 10),
+                              Text(
+                                '${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')} น.',
+                                style: TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.green.shade900
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                        ElevatedButton.icon(
-                          onPressed: () async {
-                            final TimeOfDay? picked = await showTimePicker(
-                              context: context,
-                              initialTime: selectedTime,
-                            );
-                            if (picked != null) {
-                              setDialogState(() => selectedTime = picked);
-                            }
-                          },
-                          icon: const Icon(Icons.access_time),
-                          label: const Text('ตั้งเวลา'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green.shade100,
-                            foregroundColor: Colors.green.shade900,
+                          ElevatedButton(
+                            onPressed: () async {
+                              final TimeOfDay? picked = await showTimePicker(
+                                context: context,
+                                initialTime: selectedTime,
+                              );
+                              if (picked != null) {
+                                setDialogState(() => selectedTime = picked);
+                              }
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))
+                            ),
+                            child: const Text('เปลี่ยนเวลา', style: TextStyle(fontWeight: FontWeight.bold)),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -411,7 +437,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     DropdownButtonFormField<String>(
                       initialValue: selectedMeal,
-                      decoration: const InputDecoration(labelText: 'มื้ออาหาร', border: OutlineInputBorder()),
+                      decoration: InputDecoration(
+                        labelText: 'มื้ออาหาร',
+                        prefixIcon: const Icon(Icons.restaurant, color: Colors.green),
+                        filled: true,
+                        fillColor: Colors.green.shade50,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+                      ),
                       items: const [
                         DropdownMenuItem(value: 'morning', child: Text('เช้า')),
                         DropdownMenuItem(value: 'lunch', child: Text('กลางวัน')),
@@ -423,42 +455,62 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(height: 15),
                     DropdownButtonFormField<String>(
                       initialValue: selectedInstruction,
-                      decoration: const InputDecoration(labelText: 'เงื่อนไข', border: OutlineInputBorder()),
+                      decoration: InputDecoration(
+                        labelText: 'เงื่อนไขการทาน',
+                        prefixIcon: const Icon(Icons.info_outline, color: Colors.green),
+                        filled: true,
+                        fillColor: Colors.green.shade50,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+                      ),
                       items: const [
                         DropdownMenuItem(value: 'before_meal', child: Text('ก่อนอาหาร')),
                         DropdownMenuItem(value: 'after_meal', child: Text('หลังอาหาร')),
                       ],
                       onChanged: (val) => setDialogState(() => selectedInstruction = val!),
                     ),
-                    const SizedBox(height: 15),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'เวลา: ${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')} น.',
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
+                    const SizedBox(height: 20),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade50,
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.schedule, color: Colors.green),
+                              const SizedBox(width: 10),
+                              Text(
+                                '${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')} น.',
+                                style: TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.green.shade900
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                        ElevatedButton.icon(
-                          onPressed: () async {
-                            final TimeOfDay? picked = await showTimePicker(
-                              context: context,
-                              initialTime: selectedTime,
-                            );
-                            if (picked != null) {
-                              setDialogState(() => selectedTime = picked);
-                            }
-                          },
-                          icon: const Icon(Icons.access_time),
-                          label: const Text('ตั้งเวลา'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green.shade100,
-                            foregroundColor: Colors.green.shade900,
+                          ElevatedButton(
+                            onPressed: () async {
+                              final TimeOfDay? picked = await showTimePicker(
+                                context: context,
+                                initialTime: selectedTime,
+                              );
+                              if (picked != null) {
+                                setDialogState(() => selectedTime = picked);
+                              }
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))
+                            ),
+                            child: const Text('เปลี่ยนเวลา', style: TextStyle(fontWeight: FontWeight.bold)),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -744,7 +796,7 @@ class _HomeScreenState extends State<HomeScreen> {
               if (snapshot.hasError) {
                 return Center(child: Text('เกิดข้อผิดพลาด: ${snapshot.error}'));
               }
-              final fullList = snapshot.data ?? [];
+              final fullList = snapshot.data ?? <Map<String, dynamic>>[];
               
               if (fullList.isEmpty) {
                 return Center(
@@ -767,7 +819,7 @@ class _HomeScreenState extends State<HomeScreen> {
               }
 
               final myLogMap = fullList.isNotEmpty ? fullList[0] : null;
-              final otherLogs = fullList.length > 1 ? fullList.sublist(1) : [];
+              final otherLogs = fullList.length > 1 ? List<Map<String, dynamic>>.from(fullList.sublist(1)) : <Map<String, dynamic>>[];
 
               return Column(
                 children: [

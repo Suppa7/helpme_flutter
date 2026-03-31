@@ -169,17 +169,23 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                     const SizedBox(height: 15),
                     TextField(
                       controller: nameController,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'ชื่อยา',
-                        border: OutlineInputBorder(),
+                        prefixIcon: const Icon(Icons.medication, color: Colors.green),
+                        filled: true,
+                        fillColor: Colors.green.shade50,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
                       ),
                     ),
                     const SizedBox(height: 15),
                     TextField(
                       controller: additionalInfoController,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'ข้อมูลเพิ่มเติม (วิธีรับประทาน, ข้อควรระวัง)',
-                        border: OutlineInputBorder(),
+                        prefixIcon: const Icon(Icons.note, color: Colors.green),
+                        filled: true,
+                        fillColor: Colors.green.shade50,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
                       ),
                       maxLines: 2,
                     ),
@@ -191,9 +197,12 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                           child: TextField(
                             controller: amountController,
                             keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
+                            decoration: InputDecoration(
                               labelText: 'จำนวนยาที่เหลือ',
-                              border: OutlineInputBorder(),
+                              prefixIcon: const Icon(Icons.numbers, color: Colors.green),
+                              filled: true,
+                              fillColor: Colors.green.shade50,
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
                             ),
                           ),
                         ),
@@ -202,27 +211,22 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                           flex: 3,
                           child: DropdownButtonFormField<String>(
                             initialValue: selectedUnit,
-                            decoration: const InputDecoration(
-                                labelText: 'หน่วย',
-                                border: OutlineInputBorder()),
+                            decoration: InputDecoration(
+                              labelText: 'หน่วย',
+                              filled: true,
+                              fillColor: Colors.green.shade50,
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+                            ),
                             items: const [
-                              DropdownMenuItem(
-                                  value: 'เม็ด', child: Text('เม็ด')),
-                              DropdownMenuItem(
-                                  value: 'แคปซูล', child: Text('แคปซูล')),
-                              DropdownMenuItem(
-                                  value: 'ช้อนโต๊ะ', child: Text('ช้อนโต๊ะ')),
-                              DropdownMenuItem(
-                                  value: 'ช้อนชา', child: Text('ช้อนชา')),
-                              DropdownMenuItem(
-                                  value: 'ซีซี', child: Text('ซีซี')),
-                              DropdownMenuItem(
-                                  value: 'หยด', child: Text('หยด')),
-                              DropdownMenuItem(
-                                  value: 'ซอง', child: Text('ซอง')),
+                              DropdownMenuItem(value: 'เม็ด', child: Text('เม็ด')),
+                              DropdownMenuItem(value: 'แคปซูล', child: Text('แคปซูล')),
+                              DropdownMenuItem(value: 'ช้อนโต๊ะ', child: Text('ช้อนโต๊ะ')),
+                              DropdownMenuItem(value: 'ช้อนชา', child: Text('ช้อนชา')),
+                              DropdownMenuItem(value: 'ซีซี', child: Text('ซีซี')),
+                              DropdownMenuItem(value: 'หยด', child: Text('หยด')),
+                              DropdownMenuItem(value: 'ซอง', child: Text('ซอง')),
                             ],
-                            onChanged: (val) =>
-                                setDialogState(() => selectedUnit = val!),
+                            onChanged: (val) => setDialogState(() => selectedUnit = val!),
                           ),
                         ),
                       ],
@@ -230,7 +234,13 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                     const SizedBox(height: 15),
                     DropdownButtonFormField<String>(
                       initialValue: repeatType,
-                      decoration: const InputDecoration(labelText: 'วันที่กิน', border: OutlineInputBorder()),
+                      decoration: InputDecoration(
+                        labelText: 'วันที่กิน',
+                        prefixIcon: const Icon(Icons.calendar_today, color: Colors.green),
+                        filled: true,
+                        fillColor: Colors.green.shade50,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+                      ),
                       items: const [
                         DropdownMenuItem(value: 'everyday', child: Text('กินทุกวัน')),
                         DropdownMenuItem(value: 'custom', child: Text('เลือกวัน (จ.-อา.)')),
@@ -424,17 +434,23 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                     const SizedBox(height: 15),
                     TextField(
                       controller: nameController,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'ชื่อยา',
-                        border: OutlineInputBorder(),
+                        prefixIcon: const Icon(Icons.medication, color: Colors.green),
+                        filled: true,
+                        fillColor: Colors.green.shade50,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
                       ),
                     ),
                     const SizedBox(height: 15),
                     TextField(
                       controller: additionalInfoController,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'ข้อมูลเพิ่มเติม (วิธีรับประทาน, ข้อควรระวัง)',
-                        border: OutlineInputBorder(),
+                        prefixIcon: const Icon(Icons.note, color: Colors.green),
+                        filled: true,
+                        fillColor: Colors.green.shade50,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
                       ),
                       maxLines: 2,
                     ),
@@ -446,9 +462,12 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                           child: TextField(
                             controller: amountController,
                             keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
+                            decoration: InputDecoration(
                               labelText: 'จำนวนยาที่เหลือ',
-                              border: OutlineInputBorder(),
+                              prefixIcon: const Icon(Icons.numbers, color: Colors.green),
+                              filled: true,
+                              fillColor: Colors.green.shade50,
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
                             ),
                           ),
                         ),
@@ -457,9 +476,12 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                           flex: 3,
                           child: DropdownButtonFormField<String>(
                             initialValue: selectedUnit,
-                            decoration: const InputDecoration(
-                                labelText: 'หน่วย',
-                                border: OutlineInputBorder()),
+                            decoration: InputDecoration(
+                              labelText: 'หน่วย',
+                              filled: true,
+                              fillColor: Colors.green.shade50,
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+                            ),
                             items: const [
                               DropdownMenuItem(value: 'เม็ด', child: Text('เม็ด')),
                               DropdownMenuItem(value: 'แคปซูล', child: Text('แคปซูล')),
@@ -477,7 +499,13 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                     const SizedBox(height: 15),
                     DropdownButtonFormField<String>(
                       initialValue: repeatType,
-                      decoration: const InputDecoration(labelText: 'วันที่กิน', border: OutlineInputBorder()),
+                      decoration: InputDecoration(
+                        labelText: 'วันที่กิน',
+                        prefixIcon: const Icon(Icons.calendar_today, color: Colors.green),
+                        filled: true,
+                        fillColor: Colors.green.shade50,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+                      ),
                       items: const [
                         DropdownMenuItem(value: 'everyday', child: Text('กินทุกวัน')),
                         DropdownMenuItem(value: 'custom', child: Text('เลือกวัน (จ.-อา.)')),

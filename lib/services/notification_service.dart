@@ -98,12 +98,13 @@ class NotificationService {
     required String scheduleId,
     required String timeString,
     required String userName,
+    int snoozeDurationMinutes = 30,
   }) async {
     // ยกเลิกอันเดิมก่อน
     await cancelAllAlertsForSchedule(scheduleId);
     
-    // ตั้งเวลาใหม่จากปัจจุบันไปอีก 15 นาที
-    final snoozeTime = tz.TZDateTime.now(tz.local).add(const Duration(minutes: 15));
+    // ตั้งเวลาใหม่จากปัจจุบันไปอีกตามที่ผู้ใช้เลือก
+    final snoozeTime = tz.TZDateTime.now(tz.local).add(Duration(minutes: snoozeDurationMinutes));
     await _scheduleAlarmsWithBaseTime(scheduleId, snoozeTime, timeString, userName, isSnooze: true);
   }
 
@@ -116,7 +117,7 @@ class NotificationService {
   ) async {
     int schedIdInt = (scheduleId.hashCode.abs() % 100000000);
     final repeat1Time = baseTime.add(const Duration(minutes: 1));
-    final repeat2Time = baseTime.add(const Duration(minutes: 2));
+    // final repeat2Time = baseTime.add(const Duration(minutes: 2));
     final relativeTime = baseTime.add(const Duration(minutes: 3));
 
     const androidDetails = AndroidNotificationDetails(
@@ -156,6 +157,7 @@ class NotificationService {
         payload: scheduleId,
       );
 
+      /*
       await flutterLocalNotificationsPlugin.zonedSchedule(
         schedIdInt * 10 + 3,
         'ถึงเวลากินยาแล้วครับ (แจ้งเตือนซ้ำครั้งสุดท้าย)',
@@ -166,6 +168,7 @@ class NotificationService {
         uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
         payload: scheduleId,
       );
+      */
       debugPrint('✅ [NOTIF] ตั้งปลุกซ้ำสำเร็จ schedIdInt=$schedIdInt เวลาตั้ง=$baseTime');
     } catch (e) {
       debugPrint('❌ [NOTIF] ตั้งแจ้งเตือนผู้ใช้ล้มเหลว: $e');
@@ -190,7 +193,7 @@ class NotificationService {
     int schedIdInt = (scheduleId.hashCode.abs() % 100000000);
     await flutterLocalNotificationsPlugin.cancel(schedIdInt * 10 + 1); // ญาติ
     await flutterLocalNotificationsPlugin.cancel(schedIdInt * 10 + 2); // ซ้ำครั้งที่ 1
-    await flutterLocalNotificationsPlugin.cancel(schedIdInt * 10 + 3); // ซ้ำครั้งที่ 2
+    // await flutterLocalNotificationsPlugin.cancel(schedIdInt * 10 + 3); // ซ้ำครั้งที่ 2 (Commented out as per request)
   }
 
   Future<void> cancelAllAlertsForSchedule(String scheduleId) async {

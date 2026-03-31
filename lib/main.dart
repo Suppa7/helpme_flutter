@@ -192,6 +192,49 @@ class _MedicationDetailScreenState extends State<MedicationDetailScreen> {
   }
 
   Future<void> _snoozeAlert() async {
+    // 🌟 ให้ผู้ใช้เลือกระยะเวลาเลื่อน
+    final int? selectedMinutes = await showDialog<int>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.access_time_filled, color: Colors.orange, size: 28),
+            SizedBox(width: 10),
+            Text('เลือกระยะเวลาเลื่อน', style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.timer, color: Colors.orange),
+              title: const Text('30 นาที', style: TextStyle(fontSize: 18)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              tileColor: Colors.orange.shade50,
+              onTap: () => Navigator.pop(ctx, 30),
+            ),
+            const SizedBox(height: 10),
+            ListTile(
+              leading: const Icon(Icons.timer, color: Colors.deepOrange),
+              title: const Text('1 ชั่วโมง', style: TextStyle(fontSize: 18)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              tileColor: Colors.orange.shade50,
+              onTap: () => Navigator.pop(ctx, 60),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, null),
+            child: const Text('ยกเลิก', style: TextStyle(color: Colors.grey)),
+          ),
+        ],
+      ),
+    );
+
+    if (selectedMinutes == null) return; // ผู้ใช้กดยกเลิก
+
     // 🌟 ถ้ามีการติ๊กถูกยาบางตัวไว้ โพรเซสตัวที่ถูกกินไปแล้วก่อน
     if (_takenMedIds.isNotEmpty) {
       await _processTakenMeds(_takenMedIds);
@@ -206,10 +249,87 @@ class _MedicationDetailScreenState extends State<MedicationDetailScreen> {
       scheduleId: _scheduleId,
       timeString: _scheduleTime.isEmpty ? 'ไม่ระบุเวลา' : _scheduleTime,
       userName: userName,
+      snoozeDurationMinutes: selectedMinutes,
     );
     if (mounted) {
+      final label = selectedMinutes == 60 ? '1 ชั่วโมง' : '$selectedMinutes นาที';
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('บันทึกยาที่ทานแล้ว และเลื่อนเวลาปลุกตัวที่เหลืออีก 15 นาที')),
+        SnackBar(content: Text('บันทึกยาที่ทานแล้ว และเลื่อนเวลาปลุกตัวที่เหลืออีก $label')),
+      );
+      Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
+    }
+  }
+
+  // 🌟 ข้ามมื้อนี้ (ลืมพกยา) — บันทึกสถานะ skipped โดยไม่แจ้งญาติ
+  Future<void> _skipMeal() async {
+    bool confirm = await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.cancel_outlined, color: Colors.red, size: 28),
+            SizedBox(width: 10),
+            Text('ยืนยันการข้ามมื้อนี้', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: const Text(
+          'ระบบจะบันทึกว่าคุณข้ามการทานยามื้อนี้ (เช่น ลืมพกยา)\nจะไม่มีการแจ้งเตือนไปยังญาติ',
+          style: TextStyle(fontSize: 16),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('ยกเลิก', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            child: const Text('ยืนยันข้ามมื้อนี้'),
+          ),
+        ],
+      ),
+    ) ?? false;
+
+    if (!confirm) return;
+
+    final now = DateTime.now();
+    final parts = _scheduleTime.split(':');
+    DateTime plannedTime = now;
+    if (parts.length == 2) {
+      int h = int.tryParse(parts[0]) ?? now.hour;
+      int m = int.tryParse(parts[1]) ?? now.minute;
+      plannedTime = DateTime(now.year, now.month, now.day, h, m);
+    }
+
+    // บันทึก log สถานะ 'skipped' สำหรับยาทุกตัวที่ยังไม่ได้ทาน
+    for (var med in _meds) {
+      if (!_takenMedIds.contains(med.medId)) {
+        final log = MedicationLog(
+          userId: '',
+          medId: med.medId ?? '',
+          scheduleId: _scheduleId,
+          medName: med.medName,
+          plannedTimestamp: plannedTime,
+          actualTimestamp: now,
+          status: 'skipped',
+          snoozeCount: _snoozeCount,
+        );
+        await DatabaseHelper.instance.insertMedicationLog(log);
+      }
+    }
+
+    // ถ้ามียาที่ติ๊กทานไว้แล้ว ให้บันทึกเป็น taken ด้วย
+    if (_takenMedIds.isNotEmpty) {
+      await _processTakenMeds(_takenMedIds);
+    }
+
+    // ยกเลิกแจ้งเตือนทั้งหมดสำหรับรอบนี้ (ไม่ต้องแจ้งญาติเพราะเป็นความตั้งใจ)
+    await NotificationService().cancelAllAlertsForSchedule(_scheduleId);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('บันทึกการข้ามมื้อนี้เรียบร้อย')),
       );
       Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
     }
@@ -329,6 +449,11 @@ class _MedicationDetailScreenState extends State<MedicationDetailScreen> {
                                 'ยาที่เหลือ: ${med.amount} ${med.unit}',
                                 style: const TextStyle(fontSize: 16, color: Colors.grey),
                               ),
+                              const SizedBox(height: 3),
+                              Text(
+                                'เพิ่มเติม: ${(med.additionalInfo != null && med.additionalInfo!.isNotEmpty) ? med.additionalInfo! : '-'}',
+                                style: TextStyle(fontSize: 14, color: Colors.blue.shade600),
+                              ),
                             ],
                           ),
                         ),
@@ -384,11 +509,28 @@ class _MedicationDetailScreenState extends State<MedicationDetailScreen> {
                   onPressed: _snoozeAlert,
                   icon: const Icon(Icons.access_time_filled, size: 28),
                   label: const Text(
-                    'เลื่อนเวลา (15 นาที)',
+                    'เลื่อนเวลา',
                     style: TextStyle(fontSize: 20),
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.orange,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(double.infinity, 60),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ElevatedButton.icon(
+                  onPressed: _skipMeal,
+                  icon: const Icon(Icons.cancel_outlined, size: 28),
+                  label: const Text(
+                    'ข้ามมื้ออาหารนี้ (ลืมพกยา)',
+                    style: TextStyle(fontSize: 20),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red.shade400,
                     foregroundColor: Colors.white,
                     minimumSize: const Size(double.infinity, 60),
                     shape: RoundedRectangleBorder(
@@ -492,7 +634,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 10),
               Text(
-                'เข้าสู่ระบบเพื่อจัดการเวลาทานยาของคุณ',
+                'เข้าสู่ระบบเพื่อจัดการ+12ทานยาของคุณ',
                 style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
               ),
               const SizedBox(height: 30),
