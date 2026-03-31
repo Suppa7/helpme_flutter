@@ -177,12 +177,13 @@ class NotificationService {
     try {
       await flutterLocalNotificationsPlugin.zonedSchedule(
         schedIdInt * 10 + 1,
-        '⚠️ แจ้งเตือนญาติ',
-        'คุณ $userName ยังไม่ได้กดยืนยันการกินยารอบ $timeString น. (เลยเวลามา 3 นาที)!$snoozeText',
+        '⚠️ คุณยังไม่ได้ทานยา!',
+        'เลยเวลามา 3 นาทีแล้ว คุณ $userName กรุณาทานยารอบ $timeString น. ด่วน หากยังไม่ทาน ระบบจะแจ้งเตือนไปยังญาติ$snoozeText',
         relativeTime,
         platformDetails,
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
         uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+        payload: scheduleId,
       );
     } catch (e) {
       debugPrint('❌ [DEBUG] ตั้งแจ้งเตือนญาติล้มเหลว: $e');

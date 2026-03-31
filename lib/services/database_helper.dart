@@ -338,8 +338,8 @@ class DatabaseHelper {
       final schedMin = int.tryParse(parts[1]) ?? 0;
       final plannedTime = DateTime(now.year, now.month, now.day, schedHour, schedMin);
 
-      // ข้ามถ้าเวลายังไม่ถึง (+5 นาที buffer ให้ผู้ใช้ทัน)
-      if (now.isBefore(plannedTime.add(const Duration(minutes: 5)))) continue;
+      // ข้ามถ้าเวลายังไม่ถึง (+3 นาที buffer ให้ผู้ใช้ทัน)
+      if (now.isBefore(plannedTime.add(const Duration(minutes: 3)))) continue;
 
       // ดึงยาในตารางนี้
       final medSnapshot = await _db.collection('Medications')

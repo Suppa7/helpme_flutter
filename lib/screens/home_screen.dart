@@ -25,6 +25,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isLoading = true;
   final Map<String, bool> _hasEmptyStock = {}; // เก็บสถานะว่าตารางนี้มียาหมดหรือไม่
   StreamSubscription? _alertSub; // ฟังแจ้งเตือนแบบเรียลไทม์
+  Timer? _missedCheckTimer; // 🌟 Timer ตรวจสอบยาที่ลืมทานเป็นระยะ
 
   // state สำหรับหน้าประวัติ
   bool _showingOwnHistory = true;
@@ -44,6 +45,12 @@ class _HomeScreenState extends State<HomeScreen> {
     _refreshSchedules();
     // 🌟 ตรวจสอบและบันทึก 'missed' สำหรับยาที่ผ่านเวลาไปแล้วแต่ยังไม่ได้ทาน
     DatabaseHelper.instance.checkAndMarkMissedLogs();
+    
+    // 🌟 ตั้ง Timer ตรวจสอบทุก 1 นาที เพื่อสร้าง MissedMedicationAlerts
+    // แม้ผู้ป่วยเปิดแอปก่อนถึงเวลายา ระบบจะคอยเช็คให้จนกว่าจะปิดแอป
+    _missedCheckTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      DatabaseHelper.instance.checkAndMarkMissedLogs();
+    });
     
     // 🌟 ดักฟังการแจ้งเตือนจากญาติ (Real-time Firestore)
     _listenToRelativeAlerts();
@@ -109,6 +116,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _alertSub?.cancel(); // อย่าลืมยกเลิกฟัง
+    _missedCheckTimer?.cancel(); // 🌟 ยกเลิก Timer ตรวจสอบยาที่ลืมทาน
     super.dispose();
   }
 
