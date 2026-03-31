@@ -13,7 +13,7 @@ class NearbyHospitalsScreen extends StatefulWidget {
 
 class _NearbyHospitalsScreenState extends State<NearbyHospitalsScreen> {
   // TODO: ใส่ Google Maps API Key ของคุณที่นี่
-  final String _googleApiKey = 'YOUR_API_KEY';
+  final String _googleApiKey = 'AIzaSyA0BQbq4ciT6ZHivxnOC4dc6s6Smo0u8RU';
 
   bool _isLoading = true;
   String _errorMessage = '';
