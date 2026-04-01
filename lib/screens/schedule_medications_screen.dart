@@ -199,7 +199,16 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                             keyboardType: TextInputType.number,
                             decoration: InputDecoration(
                               labelText: 'จำนวนยาที่เหลือ',
-                              prefixIcon: const Icon(Icons.numbers, color: Colors.green),
+                              prefixIcon: const Padding(
+                                padding: EdgeInsets.only(left: 15, right: 10),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text('จำนวน', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                                  ],
+                                ),
+                              ),
                               filled: true,
                               fillColor: Colors.green.shade50,
                               border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
@@ -464,7 +473,16 @@ class _ScheduleMedicationsScreenState extends State<ScheduleMedicationsScreen> {
                             keyboardType: TextInputType.number,
                             decoration: InputDecoration(
                               labelText: 'จำนวนยาที่เหลือ',
-                              prefixIcon: const Icon(Icons.numbers, color: Colors.green),
+                              prefixIcon: const Padding(
+                                padding: EdgeInsets.only(left: 15, right: 10),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text('จำนวน', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                                  ],
+                                ),
+                              ),
                               filled: true,
                               fillColor: Colors.green.shade50,
                               border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
